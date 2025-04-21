@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://rlowg40gvihs"]
+
+[node name="Cell" type="ColorRect"]
+offset_right = 64.0
+offset_bottom = 64.0
+mouse_filter = 1
+color = Color(0.25098, 0.862745, 0, 1)
+
+[node name="RichTextLabel" type="RichTextLabel" parent="."]
+visible = false
+layout_mode = 0
+offset_right = 64.0
+offset_bottom = 64.0
+mouse_filter = 1
+theme_override_font_sizes/normal_font_size = 16
+text = "fg"
