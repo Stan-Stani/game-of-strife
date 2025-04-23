@@ -85,6 +85,7 @@ func move_camera(dv: Vector2):
 
 func place_or_remove_cell(pos: Vector2):
 	pos = mouse_pos_to_cam_pos(pos)
+	print(pos)
 	var gridPos: GridPos = get_pos_in_grid_units(pos)
 	if not visualCells.has(gridPos.vector):
 		place_data_cell(gridPos)
@@ -120,7 +121,7 @@ func remove_visual_cell(gridPos: GridPos):
 func get_pos_in_grid_units(pos: Vector2) -> GridPos:
 	var gridPos: GridPos = GridPos.new()
 	var pixelsPerCellSide = CELL_SIZE  * $Camera2D.zoom.x
-	gridPos.vector = pos.snapped(Vector2(pixelsPerCellSide, pixelsPerCellSide)) / pixelsPerCellSide
+	gridPos.vector = (pos / pixelsPerCellSide).floor()
 	return gridPos
 	
 func start_stop():
