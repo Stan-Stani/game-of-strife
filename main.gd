@@ -145,6 +145,7 @@ func mouse_pos_to_cam_pos(pos):
 
 func _on_timer_timeout():
 	print("tick")
+	$SubViewport/Node3D/Camera3D.make_current() 
 	
 	calculate_future_of_grid()
 	grids.active = grids.future.duplicate()
