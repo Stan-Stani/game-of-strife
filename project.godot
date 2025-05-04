@@ -15,6 +15,10 @@ run/main_scene="uid://cwrf10pi1rxfh"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+GameState="*res://game_state.gd"
+
 [input]
 
 ui_reset={

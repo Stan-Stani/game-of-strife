@@ -21,9 +21,6 @@ var grids = {"active": {}, "future": {}}
 
 
 func calculate_future_of_grid():
-	print('grid state before calculating future')
-	print('active', grids.active)
-	print('future', grids.future)
 	for cellKey in visualCells.keys():
 		calculate_future_of_cell(grids.active.has(cellKey) && grids.active[cellKey], cellKey)
 
@@ -50,16 +47,17 @@ func calculate_future_of_cell(alive: bool, cell_key: Vector2, looking_at_neighbo
 	else:
 		grids.future[cell_key] = false
 	
-	print('calculatedFuture', cell_key, grids.future[cell_key])
 
 
 const ZOOM_STEP = 0.1
 # https://gdscript.com/projects/game-of-life/
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-		print('mouse', event.pressed)
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			place_or_remove_cell(event.position)
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			GameState.colony = grids.active
+			get_tree().change_scene_to_file("res://Game3D.tscn")
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			change_zoom(-ZOOM_STEP)
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -85,7 +83,6 @@ func move_camera(dv: Vector2):
 
 func place_or_remove_cell(pos: Vector2):
 	pos = mouse_pos_to_cam_pos(pos)
-	print(pos)
 	var gridPos: GridPos = get_pos_in_grid_units(pos)
 	if not visualCells.has(gridPos.vector):
 		place_data_cell(gridPos)
@@ -145,7 +142,9 @@ func mouse_pos_to_cam_pos(pos):
 
 func _on_timer_timeout():
 	print("tick")
-	$SubViewport/Node3D/Camera3D.make_current() 
+
+
+
 	
 	calculate_future_of_grid()
 	grids.active = grids.future.duplicate()
@@ -156,11 +155,6 @@ func _on_timer_timeout():
 		var cellGridPos = GridPos.new()
 		cellGridPos.vector = cellKey
 		if grids.active[cellKey] == true && !visualCells.has(cellKey):
-			print('visual place')
 			place_visual_cell(cellGridPos)
 		elif grids.active[cellKey] == false && visualCells.has(cellKey):
-			print('visual removing')
 			remove_visual_cell(cellGridPos)
-
-	print(num_placed_cells)
-	print(grids.active)
