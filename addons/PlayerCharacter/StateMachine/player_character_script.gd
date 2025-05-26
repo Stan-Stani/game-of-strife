@@ -12,6 +12,7 @@ var last_frame_velocity : Vector3
 var was_on_floor : bool = false
 var walk_or_run : String = "WalkState" #keep in memory if play char was walking or running before being in the air
 
+
 @export_group("Walk variables")
 @export var walk_speed : float
 @export var walk_accel : float
@@ -86,6 +87,11 @@ var coyote_jump_on : bool = false
 var Cell3D = load("res://Cell3D.tscn")
 
 @onready var cR: CharacterBody3D = $"."
+
+@onready var Game3D = $"/root/Game3D"
+
+@onready var player_camera = $"./OrbitView/Camera3D"
+
 func _ready():
 	#set move variables, and value references
 	move_speed = walk_speed
@@ -116,10 +122,11 @@ func _physics_process(_delta : float):
 			print("bang")
 			for cellPos in GameState.colony:
 				if GameState.colony[cellPos] == true:
-					var cell_3d = Cell3D.instantiate()
+					var cell_3d: RigidBody3D = Cell3D.instantiate()
 					var position_3d = Vector3(cellPos.x, cellPos.y, 0)
-					cell_3d.position = position_3d
-					add_child(cell_3d)
+					cell_3d.position = position_3d + position + player_camera.get_global_transform().basis.z * -5
+					cell_3d.add_constant_central_force(player_camera.get_global_transform().basis.z * -50)
+					Game3D.add_child(cell_3d)
 
 	
 func display_properties():

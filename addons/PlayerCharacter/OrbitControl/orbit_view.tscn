@@ -9,7 +9,6 @@ collision_mask = 0
 shape = SubResource("SphereShape3D_wgugf")
 spring_length = 8.0
 script = ExtResource("1_hg1yw")
-mouseSens = 0.0025
 min_limit_x = -1.39626
 max_limit_x = 0.174533
 pan_rotation_val = 2.6
