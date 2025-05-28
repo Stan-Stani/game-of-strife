@@ -7,7 +7,7 @@ func _ready():
 	for cellPos in GameState.colony:
 				if GameState.colony[cellPos] == true:
 					var cell_3d = Cell3D.instantiate()
-					var position_3d = Vector3(cellPos.x, cellPos.y, 0)
+					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
 					cell_3d.position = position_3d
 					add_child(cell_3d)
 

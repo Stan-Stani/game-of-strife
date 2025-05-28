@@ -123,8 +123,8 @@ func _physics_process(_delta : float):
 			for cellPos in GameState.colony:
 				if GameState.colony[cellPos] == true:
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
-					var position_3d = Vector3(cellPos.x, cellPos.y, 0)
-					cell_3d.position = position_3d + position + player_camera.get_global_transform().basis.z * -5
+					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
+					cell_3d.position = position_3d + self.position + (player_camera.get_global_transform().basis.z * -5)
 					cell_3d.add_constant_central_force(player_camera.get_global_transform().basis.z * -50)
 					Game3D.add_child(cell_3d)
 
