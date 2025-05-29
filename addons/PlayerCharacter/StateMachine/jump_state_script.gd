@@ -121,5 +121,3 @@ func jump():
 		if cR.is_on_floor(): 
 			cR.squash_and_strech(1.12, 0.1)
 			cR.particles_manager.display_particles(cR.jump_particles, cR)
-		
-		

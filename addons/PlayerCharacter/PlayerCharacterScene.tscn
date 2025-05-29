@@ -88,7 +88,6 @@ stream_0/stream = ExtResource("8_s241m")
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_xhngq"]
 
 [node name="Player" type="CharacterBody3D"]
-collision_mask = 2
 axis_lock_angular_x = true
 axis_lock_angular_y = true
 axis_lock_angular_z = true

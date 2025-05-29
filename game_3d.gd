@@ -1,6 +1,7 @@
 extends Node3D
 
 var Cell3D = load("res://Cell3D.tscn")
+var PlayerCharacterScene = load("res://addons/PlayerCharacter/PlayerCharacterScene.tscn")
 
 
 func _ready():
@@ -21,18 +22,36 @@ func _process(_delta: float) -> void:
 		var error = peer.create_server(PORT)
 		multiplayer.multiplayer_peer = peer
 		print(error_string(error))
-		multiplayer.peer_connected.connect(_on_player_connected)
+
+		DisplayServer.window_set_title("Host")
+
+		multiplayer.peer_connected.connect(func(new_peer_id):
+			print('hello ' + str(new_peer_id))
+			_add_remote_player_character.rpc(new_peer_id)
+		)
 		
 	if Input.is_action_just_pressed("be_client"):
 		var error = peer.create_client('127.0.0.1', PORT)
 		print(error_string(error))
-		multiplayer.peer_connected.connect(_on_player_connected)
-		multiplayer.connected_to_server.connect(_on_player_connected)
+
+
 		multiplayer.multiplayer_peer = peer
+		DisplayServer.window_set_title("Client")
+
+var remote_player_dictionary: Dictionary = {}
+@rpc("call_local")
+func _add_remote_player_character(new_peer_id: int):
+	var new_player_character = PlayerCharacterScene.instantiate()
+	new_player_character.is_remote = true
+	$"/root".add_child(new_player_character)
+	remote_player_dictionary.set(new_peer_id, new_player_character)
+
+@rpc("any_peer", "call_remote")
+func send_input():
+	pass
 
 
-func _on_player_connected(arg):
-	print('someone connected')
+
 # var has_loaded_cells = false
 # func _unhandled_input(event: InputEvent) -> void:
 # 	if event is InputEventMouseButton:

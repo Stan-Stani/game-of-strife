@@ -1,5 +1,9 @@
 extends CharacterBody3D
 
+# multiplayer variables
+var is_remote = false
+var remote_jump_queued = false
+
 #movement variables
 var move_speed : float
 var move_accel : float

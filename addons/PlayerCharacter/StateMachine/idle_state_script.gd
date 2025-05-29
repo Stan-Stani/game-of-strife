@@ -2,11 +2,11 @@ extends State
 
 class_name IdleState
 
-var state_name : String = "Idle"
+var state_name: String = "Idle"
 
-var cR : CharacterBody3D
+var cR: CharacterBody3D
 
-func enter(char_ref : CharacterBody3D):
+func enter(char_ref: CharacterBody3D):
 	#pass play char reference
 	cR = char_ref
 	
@@ -22,10 +22,10 @@ func verifications():
 	if cR.has_cut_jump: cR.has_cut_jump = false
 	if cR.movement_dust.emitting: cR.movement_dust.emitting = false
 	
-func update(_delta : float):
+func update(_delta: float):
 	pass
 	
-func physics_update(delta : float):
+func physics_update(delta: float):
 	check_if_floor()
 	
 	cR.gravity_apply(delta)
@@ -40,15 +40,18 @@ func check_if_floor():
 	if !cR.is_on_floor() and !cR.is_on_wall():
 		transitioned.emit(self, "InairState")
 	if cR.is_on_floor():
-		if cR.jump_buff_on: 
+		if cR.jump_buff_on:
 			cR.buffered_jump = true
 			cR.jump_buff_on = false
 			transitioned.emit(self, "JumpState")
 			
 func input_management():
 	#manage the state transitions depending on the actions inputs
-	if Input.is_action_pressed(cR.jumpAction) if cR.auto_jump else Input.is_action_just_pressed(cR.jumpAction) :
-		transitioned.emit(self, "JumpState")
+	if Input.is_action_pressed(cR.jumpAction) if cR.auto_jump else Input.is_action_just_pressed(cR.jumpAction):
+		if !cR.is_remote:
+			transitioned.emit(self, "JumpState")
+		else:
+			queue_remote_jump.rpc()
 		
 	if Input.is_action_just_pressed(cR.runAction):
 		if cR.walk_or_run == "WalkState": cR.walk_or_run = "RunState"
@@ -57,10 +60,14 @@ func input_management():
 	if Input.is_action_just_pressed("ragdoll"):
 		if !cR.godot_plush_skin.ragdoll:
 			transitioned.emit(self, "RagdollState")
-		
-func move(delta : float):
-	#manage the character movement
 	
+@rpc("any_peer", "call_remote")
+func queue_remote_jump():
+	print('executing queue remote jump')
+	transitioned.emit(self, "JumpState")
+	
+func move(delta: float):
+	#manage the character movement
 	#get the move direction depending on the input
 	cR.move_dir = Input.get_vector(cR.moveLeftAction, cR.moveRightAction, cR.moveForwardAction, cR.moveBackwardAction).rotated(-cR.cam_holder.global_rotation.y)
 	
