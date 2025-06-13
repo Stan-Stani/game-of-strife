@@ -47,7 +47,7 @@ func applies():
 	cR.velocity.z = 0.0
 	
 func input_management():
-	if Input.is_action_just_pressed("ragdoll"):
+	if cR.get_input_just_pressed("ragdoll"):
 		#if ragdoll is set to be only enable on floor
 		if cR.ragdoll_on_floor_only and cR.is_on_floor():
 			cR.godot_plush_skin.ragdoll = false

@@ -47,29 +47,24 @@ func check_if_floor():
 			
 func input_management():
 	#manage the state transitions depending on the actions inputs
-	if Input.is_action_pressed(cR.jumpAction) if cR.auto_jump else Input.is_action_just_pressed(cR.jumpAction):
-		if !cR.is_remote:
-			transitioned.emit(self, "JumpState")
-		else:
-			queue_remote_jump.rpc()
+	var jump_pressed = cR.get_input_pressed(cR.jumpAction) if cR.auto_jump else cR.get_input_just_pressed(cR.jumpAction)
+	if jump_pressed:
+		transitioned.emit(self, "JumpState")
 		
-	if Input.is_action_just_pressed(cR.runAction):
+	if cR.get_input_just_pressed(cR.runAction):
 		if cR.walk_or_run == "WalkState": cR.walk_or_run = "RunState"
 		elif cR.walk_or_run == "RunState": cR.walk_or_run = "WalkState"
 		
-	if Input.is_action_just_pressed("ragdoll"):
+	if cR.get_input_just_pressed("ragdoll"):
 		if !cR.godot_plush_skin.ragdoll:
 			transitioned.emit(self, "RagdollState")
-	
-@rpc("any_peer", "call_remote")
-func queue_remote_jump():
-	print('executing queue remote jump')
-	transitioned.emit(self, "JumpState")
 	
 func move(delta: float):
 	#manage the character movement
 	#get the move direction depending on the input
-	cR.move_dir = Input.get_vector(cR.moveLeftAction, cR.moveRightAction, cR.moveForwardAction, cR.moveBackwardAction).rotated(-cR.cam_holder.global_rotation.y)
+	var move_vector = get_move_vector()
+	var camera_rotation = cR.get_camera_rotation()
+	cR.move_dir = move_vector.rotated(-camera_rotation.y)
 	
 	if cR.move_dir and cR.is_on_floor():
 		#transition to corresponding state
@@ -78,3 +73,15 @@ func move(delta: float):
 		#apply smooth stop 
 		cR.velocity.x = lerp(cR.velocity.x, 0.0, cR.move_deccel * delta)
 		cR.velocity.z = lerp(cR.velocity.z, 0.0, cR.move_deccel * delta)
+
+func get_move_vector() -> Vector2:
+	var move_vector = Vector2.ZERO
+	if cR.get_input_pressed(cR.moveLeftAction):
+		move_vector.x -= 1.0
+	if cR.get_input_pressed(cR.moveRightAction):
+		move_vector.x += 1.0
+	if cR.get_input_pressed(cR.moveForwardAction):
+		move_vector.y -= 1.0
+	if cR.get_input_pressed(cR.moveBackwardAction):
+		move_vector.y += 1.0
+	return move_vector.normalized()

@@ -49,19 +49,22 @@ func check_if_floor():
 			transitioned.emit(self, "JumpState")
 			
 func input_management():
-	if Input.is_action_pressed(cR.jumpAction) if cR.auto_jump else Input.is_action_just_pressed(cR.jumpAction) :
+	var jump_pressed = cR.get_input_pressed(cR.jumpAction) if cR.auto_jump else cR.get_input_just_pressed(cR.jumpAction)
+	if jump_pressed:
 		transitioned.emit(self, "JumpState")
 		
-	if Input.is_action_just_pressed(cR.runAction):
+	if cR.get_input_just_pressed(cR.runAction):
 		cR.walk_or_run = "RunState"
 		transitioned.emit(self, "RunState")
 		
-	if Input.is_action_just_pressed("ragdoll"):
+	if cR.get_input_just_pressed("ragdoll"):
 		if !cR.godot_plush_skin.ragdoll:
 			transitioned.emit(self, "RagdollState")
 		
 func move(delta : float):
-	cR.move_dir = Input.get_vector(cR.moveLeftAction, cR.moveRightAction, cR.moveForwardAction, cR.moveBackwardAction).rotated(-cR.cam_holder.global_rotation.y)
+	var move_vector = get_move_vector()
+	var camera_rotation = cR.get_camera_rotation()
+	cR.move_dir = move_vector.rotated(-camera_rotation.y)
 	
 	if cR.move_dir and cR.is_on_floor():
 		#apply smooth move
@@ -69,3 +72,15 @@ func move(delta : float):
 		cR.velocity.z = lerp(cR.velocity.z, cR.move_dir.y * cR.move_speed, cR.move_accel * delta)
 	else:
 		transitioned.emit(self, "IdleState")
+
+func get_move_vector() -> Vector2:
+	var move_vector = Vector2.ZERO
+	if cR.get_input_pressed(cR.moveLeftAction):
+		move_vector.x -= 1.0
+	if cR.get_input_pressed(cR.moveRightAction):
+		move_vector.x += 1.0
+	if cR.get_input_pressed(cR.moveForwardAction):
+		move_vector.y -= 1.0
+	if cR.get_input_pressed(cR.moveBackwardAction):
+		move_vector.y += 1.0
+	return move_vector.normalized()

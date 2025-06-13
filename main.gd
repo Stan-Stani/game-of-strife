@@ -108,6 +108,7 @@ func place_visual_cell(gridPos: GridPos):
 	
 func remove_data_cell(gridPos: GridPos):
 	if visualCells.has(gridPos.vector):
+		grids.active.erase(gridPos.vector)
 		grids.future.erase(gridPos.vector)
 		num_placed_cells -= 1
 

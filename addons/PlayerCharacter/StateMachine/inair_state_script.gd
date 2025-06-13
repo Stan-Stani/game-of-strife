@@ -40,7 +40,7 @@ func gravity_apply(delta : float):
 	if cR.velocity.y >= 0.0: cR.velocity.y -= cR.jump_gravity / cR.jump_cut_multiplier * delta
 		
 func input_management():
-	if Input.is_action_just_pressed(cR.jumpAction) :
+	if cR.get_input_just_pressed(cR.jumpAction):
 		#check if can jump buffer
 		if cR.floor_check.is_colliding() and cR.last_frame_position.y > cR.position.y and cR.nb_jumps_in_air_allowed <= 0: cR.jump_buff_on = true
 		#check if can coyote jump
@@ -49,7 +49,7 @@ func input_management():
 			transitioned.emit(self, "JumpState")
 		transitioned.emit(self, "JumpState")
 		
-	if Input.is_action_just_pressed("ragdoll"):
+	if cR.get_input_just_pressed("ragdoll"):
 		if !cR.godot_plush_skin.ragdoll and !cR.ragdoll_on_floor_only:
 			transitioned.emit(self, "RagdollState")
 		
@@ -74,7 +74,9 @@ func check_if_floor():
 			cR.velocity.z = 0.0
 		
 func move(delta : float):
-	cR.move_dir = Input.get_vector(cR.moveLeftAction, cR.moveRightAction, cR.moveForwardAction, cR.moveBackwardAction).rotated(-cR.cam_holder.global_rotation.y)
+	var move_vector = get_move_vector()
+	var camera_rotation = cR.get_camera_rotation()
+	cR.move_dir = move_vector.rotated(-camera_rotation.y)
 		
 	if cR.move_dir and !cR.is_on_floor():
 		var in_air_move_speed_val : float
@@ -88,6 +90,18 @@ func move(delta : float):
 		
 		cR.velocity.x = lerp(cR.velocity.x, cR.move_dir.x * in_air_move_speed_val, in_air_accel_val * delta)
 		cR.velocity.z = lerp(cR.velocity.z, cR.move_dir.y * in_air_move_speed_val, in_air_accel_val * delta)
+
+func get_move_vector() -> Vector2:
+	var move_vector = Vector2.ZERO
+	if cR.get_input_pressed(cR.moveLeftAction):
+		move_vector.x -= 1.0
+	if cR.get_input_pressed(cR.moveRightAction):
+		move_vector.x += 1.0
+	if cR.get_input_pressed(cR.moveForwardAction):
+		move_vector.y -= 1.0
+	if cR.get_input_pressed(cR.moveBackwardAction):
+		move_vector.y += 1.0
+	return move_vector.normalized()
 		
 func impact_audio_playing():
 	#audio played when play char touch the ground after being in air

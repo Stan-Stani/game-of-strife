@@ -2,7 +2,15 @@ extends CharacterBody3D
 
 # multiplayer variables
 var is_remote = false
-var remote_jump_queued = false
+var player_peer_id = 1  # Which peer this player represents (for pattern shooting)
+var remote_input_data = {}
+var remote_camera_rotation = Vector3.ZERO
+var remote_camera_transform = Transform3D.IDENTITY
+var input_buffer = []
+
+# shooting variables
+var shoot_cooldown_time = 0.5  # Half second between shots
+var last_shoot_time = 0.0
 
 #movement variables
 var move_speed : float
@@ -120,44 +128,70 @@ func _process(delta: float):
 func _physics_process(_delta : float):
 	modify_physics_properties()
 	
+	if !is_remote and is_multiplayer_authority():
+		# Collect and send input data
+		var input_data = collect_input_data()
+		Game3D.receive_player_input.rpc(multiplayer.get_unique_id(), input_data)
+	
 	move_and_slide()
 	
-	if Input.is_action_just_pressed(cR.shootAction):
+	# Handle shooting with cooldown and just_pressed requirement
+	if get_input_just_pressed(shootAction):
+		var current_timestamp = Time.get_unix_time_from_system()
+		
+		if current_timestamp - last_shoot_time >= shoot_cooldown_time:
 			print("bang")
-			for cellPos in GameState.colony:
-				if GameState.colony[cellPos] == true:
+			last_shoot_time = current_timestamp
+			var camera_transform = get_camera_transform()
+			
+			# Get the pattern for this specific player character (based on which peer they represent)
+			var pattern_to_shoot = Game3D.get_player_pattern(player_peer_id)
+			print("Player character representing peer " + str(player_peer_id) + " (remote: " + str(is_remote) + ") shooting pattern with " + str(pattern_to_shoot.size()) + " cells")
+			
+			for cellPos in pattern_to_shoot:
+				if pattern_to_shoot[cellPos] == true:
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
 					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
-					cell_3d.position = position_3d + self.position + (player_camera.get_global_transform().basis.z * -5)
-					cell_3d.add_constant_central_force(player_camera.get_global_transform().basis.z * -50)
+					cell_3d.position = position_3d + self.position + (camera_transform.basis.z * -5)
+					cell_3d.add_constant_central_force(camera_transform.basis.z * -50)
 					Game3D.add_child(cell_3d)
 
 	
 func display_properties():
-	#display play char properties
-	debug_hud.display_curr_state(state_machine.curr_state_name)
-	debug_hud.display_velocity(velocity.length())
-	debug_hud.display_nb_jumps_in_air_allowed(nb_jumps_in_air_allowed)
-	debug_hud.display_jump_buffer(jump_buff_on)
-	debug_hud.display_coyote_time(coyote_jump_cooldown)
-	debug_hud.display_model_orientation(cam_holder.cam_aimed and follow_cam_pos_when_aimed)
-	debug_hud.display_camera_mode(cam_holder.cam_aimed)
+	#display play char properties (only for local player)
+	if !is_remote and debug_hud:
+		debug_hud.display_curr_state(state_machine.curr_state_name)
+		debug_hud.display_velocity(velocity.length())
+		debug_hud.display_nb_jumps_in_air_allowed(nb_jumps_in_air_allowed)
+		debug_hud.display_jump_buffer(jump_buff_on)
+		debug_hud.display_coyote_time(coyote_jump_cooldown)
+		if cam_holder:
+			debug_hud.display_model_orientation(cam_holder.cam_aimed and follow_cam_pos_when_aimed)
+			debug_hud.display_camera_mode(cam_holder.cam_aimed)
 	
 func modify_model_orientation(delta : float):
 	#manage the model rotation depending on the camera mode + char parameters
 	
 	var dir_target_angle : float
 	
+	# Get camera data for both local and remote players
+	var camera_rotation = get_camera_rotation()
+	var cam_aimed = false
+	
+	# For local players, check camera aim state
+	if !is_remote and cam_holder:
+		cam_aimed = cam_holder.cam_aimed
+	
 	#follow mode (model must follow the camera rotation)
 	#if the cam is in angled/aim mode
-	if cam_holder.cam_aimed and follow_cam_pos_when_aimed and !godot_plush_skin.ragdoll:
+	if cam_aimed and follow_cam_pos_when_aimed and !godot_plush_skin.ragdoll:
 		#get cam rotation on the y axis (+ PI to invert half circle, and be sure that the model is correctly oriented)
-		dir_target_angle = (cam_holder.cam.global_rotation.y) + PI
+		dir_target_angle = camera_rotation.y + PI
 		#rotate the model on the y axis
 		visual_root.rotation.y = rotate_toward(visual_root.rotation.y, dir_target_angle, model_rot_speed * delta)
 	
 	#free mode (the model orientation is independant to the camera one)
-	if (!cam_holder.cam_aimed or !follow_cam_pos_when_aimed) and move_dir != Vector2.ZERO:
+	if (!cam_aimed or !follow_cam_pos_when_aimed) and move_dir != Vector2.ZERO:
 		#get char move direction
 		dir_target_angle = -move_dir.orthogonal().angle()
 		#rotate the model on the y axis
@@ -182,9 +216,68 @@ func squash_and_strech(value : float, timing : float):
 	sasTween.set_ease(Tween.EASE_OUT)
 	sasTween.tween_property(godot_plush_skin, "squash_and_stretch", value, timing)
 	sasTween.tween_property(godot_plush_skin, "squash_and_stretch", 1.0, timing * 1.8)
+
+func collect_input_data() -> Dictionary:
+	return {
+		"move_forward": Input.is_action_pressed(moveForwardAction),
+		"move_backward": Input.is_action_pressed(moveBackwardAction),
+		"move_left": Input.is_action_pressed(moveLeftAction),
+		"move_right": Input.is_action_pressed(moveRightAction),
+		"run": Input.is_action_pressed(runAction),
+		"jump": Input.is_action_just_pressed(jumpAction),
+		"shoot": Input.is_action_just_pressed(shootAction),
+		"ragdoll": Input.is_action_just_pressed("ragdoll"),
+		"mouse_motion": Input.get_last_mouse_velocity(),
+		"camera_rotation": cam_holder.global_rotation if cam_holder else Vector3.ZERO,
+		"camera_transform": cam_holder.cam.global_transform if cam_holder and cam_holder.cam else Transform3D.IDENTITY,
+		"position": position,
+		"velocity": velocity,
+		"rotation": rotation
+	}
+
+func apply_remote_input(input_data: Dictionary):
+	remote_input_data = input_data
 	
+	# Store camera data for remote players
+	if input_data.has("camera_rotation"):
+		remote_camera_rotation = input_data.get("camera_rotation", Vector3.ZERO)
+	if input_data.has("camera_transform"):
+		remote_camera_transform = input_data.get("camera_transform", Transform3D.IDENTITY)
 	
-	
-	
-	
-	
+	# Apply position reconciliation for remote players
+	if is_remote and input_data.has("position"):
+		var target_position = input_data.get("position", position)
+		var target_velocity = input_data.get("velocity", velocity)
+		var target_rotation = input_data.get("rotation", rotation)
+		
+		# Smoothly interpolate to the authoritative position
+		var distance = position.distance_to(target_position)
+		if distance > 0.1:  # Only reconcile if difference is significant
+			var lerp_factor = min(0.2, distance * 0.1)  # Stronger correction for larger differences
+			position = position.lerp(target_position, lerp_factor)
+			velocity = velocity.lerp(target_velocity, lerp_factor)
+			rotation = rotation.lerp(target_rotation, lerp_factor)
+
+func get_input_pressed(action: String) -> bool:
+	if is_remote:
+		return remote_input_data.get(action.replace("_action", ""), false)
+	else:
+		return Input.is_action_pressed(action)
+
+func get_input_just_pressed(action: String) -> bool:
+	if is_remote:
+		return remote_input_data.get(action.replace("_action", ""), false)
+	else:
+		return Input.is_action_just_pressed(action)
+
+func get_camera_rotation() -> Vector3:
+	if is_remote:
+		return remote_camera_rotation
+	else:
+		return cam_holder.global_rotation if cam_holder else Vector3.ZERO
+
+func get_camera_transform() -> Transform3D:
+	if is_remote:
+		return remote_camera_transform
+	else:
+		return cam_holder.cam.global_transform if cam_holder and cam_holder.cam else Transform3D.IDENTITY

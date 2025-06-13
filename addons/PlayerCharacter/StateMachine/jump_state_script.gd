@@ -40,16 +40,18 @@ func applies(delta : float):
 		if cR.coyote_jump_cooldown > 0.0: cR.coyote_jump_cooldown -= delta
 		
 func input_management():
-	if Input.is_action_just_pressed(cR.jumpAction):
+	if cR.get_input_just_pressed(cR.jumpAction):
 		jump()
 		
-	if Input.is_action_just_released(cR.jumpAction):
+	# Note: For jump release, we need to check if the button was released
+	# This is tricky with remote input, so we'll handle it differently
+	if !cR.get_input_pressed(cR.jumpAction) and !cR.has_cut_jump:
 		#cut jump in action, allow to manage jump height 
 		#(the longer you press the button, the more high the play char goes, similar to the Mario Bros games)
 		cR.has_cut_jump = true
 		transitioned.emit(self, "InairState")
 		
-	if Input.is_action_just_pressed("ragdoll"):
+	if cR.get_input_just_pressed("ragdoll"):
 		if !cR.godot_plush_skin.ragdoll and !cR.ragdoll_on_floor_only:
 			transitioned.emit(self, "RagdollState")
 			
@@ -68,7 +70,9 @@ func check_if_floor():
 			cR.velocity.z = 0.0
 			
 func move(delta : float):
-	cR.move_dir = Input.get_vector(cR.moveLeftAction, cR.moveRightAction, cR.moveForwardAction, cR.moveBackwardAction).rotated(-cR.cam_holder.global_rotation.y)
+	var move_vector = get_move_vector()
+	var camera_rotation = cR.get_camera_rotation()
+	cR.move_dir = move_vector.rotated(-camera_rotation.y)
 	
 	#depending on the previous grounded state (walk or run)
 	#choose corresponding curve, to apply the correct in air values
@@ -84,6 +88,18 @@ func move(delta : float):
 			
 		cR.velocity.x = lerp(cR.velocity.x, cR.move_dir.x * in_air_move_speed_val, in_air_accel_val * delta)
 		cR.velocity.z = lerp(cR.velocity.z, cR.move_dir.y * in_air_move_speed_val, in_air_accel_val * delta)
+
+func get_move_vector() -> Vector2:
+	var move_vector = Vector2.ZERO
+	if cR.get_input_pressed(cR.moveLeftAction):
+		move_vector.x -= 1.0
+	if cR.get_input_pressed(cR.moveRightAction):
+		move_vector.x += 1.0
+	if cR.get_input_pressed(cR.moveForwardAction):
+		move_vector.y -= 1.0
+	if cR.get_input_pressed(cR.moveBackwardAction):
+		move_vector.y += 1.0
+	return move_vector.normalized()
 		
 func jump(): 
 	#manage the jump behaviour, depending of the different variables and states the character is
