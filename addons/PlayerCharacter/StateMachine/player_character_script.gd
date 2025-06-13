@@ -97,6 +97,8 @@ var coyote_jump_on : bool = false
 @onready var land_particles = preload("res://addons/PlayerCharacter/Vfx/land_particles.tscn")
 
 var Cell3D = load("res://Cell3D.tscn")
+var pattern_model_cells: Array[Node3D] = []
+var pattern_collision_shapes: Array[CollisionShape3D] = []
 
 @onready var cR: CharacterBody3D = $"."
 
@@ -281,3 +283,107 @@ func get_camera_transform() -> Transform3D:
 		return remote_camera_transform
 	else:
 		return cam_holder.cam.global_transform if cam_holder and cam_holder.cam else Transform3D.IDENTITY
+
+func create_pattern_model():
+	# Clear existing pattern model
+	clear_pattern_model()
+	
+	# Get the pattern for this player
+	var pattern = Game3D.get_player_pattern(player_peer_id)
+	print("Creating pattern model for peer " + str(player_peer_id) + " with " + str(pattern.size()) + " cells")
+	
+	if pattern.is_empty():
+		print("No pattern available, keeping default model")
+		return
+	
+	# Hide the default model and collision
+	if godot_plush_skin:
+		godot_plush_skin.visible = false
+	
+	# Keep the original collision for movement, but make it invisible
+	# The pattern collision shapes will handle hitbox detection
+	
+	# Calculate pattern bounds for centering
+	var min_pos = Vector2(INF, INF)
+	var max_pos = Vector2(-INF, -INF)
+	
+	for cell_pos in pattern:
+		if pattern[cell_pos] == true:
+			min_pos.x = min(min_pos.x, cell_pos.x)
+			min_pos.y = min(min_pos.y, cell_pos.y)
+			max_pos.x = max(max_pos.x, cell_pos.x)
+			max_pos.y = max(max_pos.y, cell_pos.y)
+	
+	var pattern_center_x = (min_pos.x + max_pos.x) / 2.0
+	var pattern_bottom_y = max_pos.y  # Bottom of pattern (highest Y value in 2D)
+	var pattern_size = max_pos - min_pos
+	
+	# Scale factor to make character appropriately sized (roughly 2 units tall)
+	var scale_factor = 0.5  # Adjust this to make character bigger/smaller
+	
+	# Create static visual cells for the pattern (no physics)
+	for cell_pos in pattern:
+		if pattern[cell_pos] == true:
+			# Create a static visual cell instead of physics-enabled Cell3D
+			var static_cell = _create_static_cell()
+			
+			# Position relative to pattern center horizontally, but bottom-aligned vertically
+			var relative_x = cell_pos.x - pattern_center_x
+			var relative_y = cell_pos.y - pattern_bottom_y  # Offset from bottom
+			# Add 0.5 to lift the bottom cells so their bottom face sits on the floor
+			var world_pos = Vector3(relative_x * scale_factor, (-relative_y * scale_factor) + (0.5 * scale_factor), 0)
+			
+			static_cell.position = world_pos
+			static_cell.scale = Vector3.ONE * scale_factor
+			
+			# Add to visual root
+			visual_root.add_child(static_cell)
+			pattern_model_cells.append(static_cell)
+			
+			# Create individual collision shape for this cell
+			var collision_shape = CollisionShape3D.new()
+			var box_shape = BoxShape3D.new()
+			box_shape.size = Vector3.ONE * scale_factor
+			collision_shape.shape = box_shape
+			collision_shape.position = world_pos
+			
+			# Add collision shape to the character body
+			add_child(collision_shape)
+			pattern_collision_shapes.append(collision_shape)
+			
+			print("Added pattern cell and collision at " + str(world_pos))
+
+func _create_static_cell() -> Node3D:
+	# Create a static visual cell (no physics) that looks like Cell3D
+	var static_cell = MeshInstance3D.new()
+	
+	# Use the same visual appearance as Cell3D
+	var box_mesh = BoxMesh.new()
+	box_mesh.size = Vector3.ONE  # Standard 1x1x1 box
+	static_cell.mesh = box_mesh
+	
+	# Create green material to match Cell3D appearance
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color(0.431797, 0.783099, 0.415405, 1)  # Same green as Cell3D
+	material.metallic = 0.0
+	material.roughness = 0.5
+	static_cell.material_override = material
+	
+	return static_cell
+
+func clear_pattern_model():
+	# Remove existing pattern cells
+	for cell in pattern_model_cells:
+		if cell and is_instance_valid(cell):
+			cell.queue_free()
+	pattern_model_cells.clear()
+	
+	# Remove pattern collision shapes
+	for collision_shape in pattern_collision_shapes:
+		if collision_shape and is_instance_valid(collision_shape):
+			collision_shape.queue_free()
+	pattern_collision_shapes.clear()
+	
+	# Show default model
+	if godot_plush_skin:
+		godot_plush_skin.visible = true

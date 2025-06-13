@@ -59,8 +59,16 @@ func _add_remote_player_character(new_peer_id: int):
 	new_player_character.is_remote = true
 	new_player_character.player_peer_id = new_peer_id
 	new_player_character.name = "RemotePlayer_" + str(new_peer_id)
+	
+	# Set collision layers for player-to-player interaction
+	new_player_character.collision_layer = 4  # Player layer (bit 3)
+	new_player_character.collision_mask = 7   # Collide with environment (bit 1), floor (bit 2), and other players (bit 3)
+	
 	add_child(new_player_character)
 	remote_player_dictionary[new_peer_id] = new_player_character
+	
+	# Create pattern-based model for remote player (deferred to allow pattern sync)
+	call_deferred("_create_pattern_model_for_player", new_player_character)
 	print("Added remote player for peer: " + str(new_peer_id) + " at position: " + str(new_player_character.position))
 	
 	# Request initial position after a brief delay to ensure everything is set up
@@ -113,6 +121,13 @@ func _configure_local_player():
 		local_player.name = "LocalPlayer_" + str(multiplayer.get_unique_id())
 		local_player.set_multiplayer_authority(multiplayer.get_unique_id())
 		local_player_ref = local_player  # Store reference for later use
+		
+		# Set collision layers for player-to-player interaction
+		local_player.collision_layer = 4  # Player layer (bit 3)
+		local_player.collision_mask = 7   # Collide with environment (bit 1), floor (bit 2), and other players (bit 3)
+		
+		# Create pattern-based model for local player
+		call_deferred("_create_pattern_model_for_player", local_player)
 		print("Configured local player with authority: " + str(multiplayer.get_unique_id()))
 		print("Local player name: " + local_player.name)
 		print("Local player position: " + str(local_player.position))
@@ -182,6 +197,9 @@ func _send_pattern_to_server():
 func _sync_player_pattern(peer_id: int, pattern_data: Dictionary):
 	player_patterns[peer_id] = pattern_data
 	print("Received pattern from peer " + str(peer_id) + " with " + str(pattern_data.size()) + " cells")
+	
+	# Update the visual model for this peer if they have a player character
+	_update_player_pattern_model(peer_id)
 	
 	# If this is the server, forward the pattern to all other clients
 	if multiplayer.is_server():
@@ -298,6 +316,30 @@ func _dev_start_client():
 	DisplayServer.window_set_title("Dev Client")
 	
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
+
+func _create_pattern_model_for_player(player_character):
+	if player_character and player_character.has_method("create_pattern_model"):
+		print("Creating pattern model for player: " + player_character.name)
+		player_character.create_pattern_model()
+	else:
+		print("Player character does not have create_pattern_model method")
+
+func _update_player_pattern_model(peer_id: int):
+	# Find the player character for this peer and update their model
+	var player_character = null
+	
+	# Check if it's the local player
+	if local_player_ref and local_player_ref.player_peer_id == peer_id:
+		player_character = local_player_ref
+	# Check remote players
+	elif remote_player_dictionary.has(peer_id):
+		player_character = remote_player_dictionary[peer_id]
+	
+	if player_character:
+		print("Updating pattern model for peer " + str(peer_id))
+		_create_pattern_model_for_player(player_character)
+	else:
+		print("No player character found for peer " + str(peer_id))
 
 
 
