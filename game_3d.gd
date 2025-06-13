@@ -17,6 +17,9 @@ func _ready():
 
 	# Don't spawn local player here - wait for multiplayer connection
 	
+	# Auto-connect for development
+	_check_dev_auto_connect()
+	
 	
 var peer = ENetMultiplayerPeer.new()
 var PORT = 3006
@@ -212,6 +215,89 @@ func get_player_pattern(peer_id: int) -> Dictionary:
 		print("No stored pattern for peer " + str(peer_id) + ", using GameState.colony with " + str(GameState.colony.size()) + " cells")
 		# Fallback to current GameState.colony if no stored pattern
 		return GameState.colony
+
+func _check_dev_auto_connect():
+	# Check for development auto-connect based on command line arguments or debug mode
+	var args = OS.get_cmdline_args()
+	
+	# Check if running in debug mode (in editor) or specific command line args
+	var is_debug = OS.is_debug_build()
+	var auto_server = "--server" in args or "--host" in args
+	var auto_client = "--client" in args
+	
+	# For easy testing: test if server is actually running and accepting connections
+	if is_debug and not auto_server and not auto_client:
+		call_deferred("_test_server_connection")
+	elif auto_server:
+		call_deferred("_dev_start_server")
+	elif auto_client:
+		call_deferred("_dev_start_client")
+
+func _test_server_connection():
+	print("Development mode: Testing for existing server...")
+	
+	# Create a test multiplayer peer to check connection
+	var test_peer = ENetMultiplayerPeer.new()
+	var test_multiplayer = MultiplayerAPI.create_default_interface()
+	
+	# Try to connect
+	var result = test_peer.create_client('127.0.0.1', PORT)
+	if result != OK:
+		print("Development mode: Could not create test client, becoming server")
+		_dev_start_server()
+		return
+	
+	test_multiplayer.multiplayer_peer = test_peer
+	
+	# Wait for connection result
+	var connection_timeout = 2.0  # 2 second timeout
+	var start_time = Time.get_unix_time_from_system()
+	
+	while Time.get_unix_time_from_system() - start_time < connection_timeout:
+		test_multiplayer.poll()
+		
+		if test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+			print("Development mode: Found existing server, auto-connecting as client")
+			test_peer.close()
+			_dev_start_client()
+			return
+		elif test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+			print("Development mode: Connection failed, becoming server")
+			test_peer.close()
+			_dev_start_server()
+			return
+		
+		await get_tree().process_frame
+	
+	# Timeout reached
+	print("Development mode: Connection test timed out, becoming server")
+	test_peer.close()
+	_dev_start_server()
+
+func _dev_start_server():
+	var error = peer.create_server(PORT)
+	multiplayer.multiplayer_peer = peer
+	print("Dev server started: " + error_string(error))
+	
+	DisplayServer.window_set_title("Dev Host")
+	
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	
+	_configure_local_player()
+	_store_local_player_pattern()
+
+func _dev_start_client():
+	# Wait a moment for server to start up
+	await get_tree().create_timer(1.0).timeout
+	
+	var error = peer.create_client('127.0.0.1', PORT)
+	print("Dev client connecting: " + error_string(error))
+	
+	multiplayer.multiplayer_peer = peer
+	DisplayServer.window_set_title("Dev Client")
+	
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
 
 
 
