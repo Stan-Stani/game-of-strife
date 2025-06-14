@@ -5,12 +5,12 @@
 [sub_resource type="SphereShape3D" id="SphereShape3D_wgugf"]
 
 [node name="OrbitView" type="SpringArm3D"]
-collision_mask = 0
+collision_mask = 3
 shape = SubResource("SphereShape3D_wgugf")
 spring_length = 8.0
 script = ExtResource("1_hg1yw")
 min_limit_x = -1.39626
-max_limit_x = 0.174533
+max_limit_x = 1.39626
 pan_rotation_val = 2.6
 max_zoom_val = 30.0
 min_zoom_val = 3.0

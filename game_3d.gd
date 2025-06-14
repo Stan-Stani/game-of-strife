@@ -24,6 +24,7 @@ func _ready():
 var peer = ENetMultiplayerPeer.new()
 var PORT = 3006
 func _process(_delta: float) -> void:
+	
 	if Input.is_action_just_pressed("be_server"):
 		var error = peer.create_server(PORT)
 		multiplayer.multiplayer_peer = peer
@@ -60,9 +61,9 @@ func _add_remote_player_character(new_peer_id: int):
 	new_player_character.player_peer_id = new_peer_id
 	new_player_character.name = "RemotePlayer_" + str(new_peer_id)
 	
-	# Set collision layers for player-to-player interaction
-	new_player_character.collision_layer = 4  # Player layer (bit 3)
-	new_player_character.collision_mask = 7   # Collide with environment (bit 1), floor (bit 2), and other players (bit 3)
+	# Simple collision system: all players on same layer, can collide with each other
+	new_player_character.collision_layer = 4  # All players on layer 4
+	new_player_character.collision_mask = 7   # Collide with environment (1), floor (2), and other players (4)
 	
 	add_child(new_player_character)
 	remote_player_dictionary[new_peer_id] = new_player_character
@@ -122,9 +123,9 @@ func _configure_local_player():
 		local_player.set_multiplayer_authority(multiplayer.get_unique_id())
 		local_player_ref = local_player  # Store reference for later use
 		
-		# Set collision layers for player-to-player interaction
-		local_player.collision_layer = 4  # Player layer (bit 3)
-		local_player.collision_mask = 7   # Collide with environment (bit 1), floor (bit 2), and other players (bit 3)
+		# Simple collision system: all players on same layer, can collide with each other
+		local_player.collision_layer = 4  # All players on layer 4
+		local_player.collision_mask = 7   # Collide with environment (1), floor (2), and other players (4)
 		
 		# Create pattern-based model for local player
 		call_deferred("_create_pattern_model_for_player", local_player)

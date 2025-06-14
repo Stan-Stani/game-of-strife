@@ -98,7 +98,8 @@ var coyote_jump_on : bool = false
 
 var Cell3D = load("res://Cell3D.tscn")
 var pattern_model_cells: Array[Node3D] = []
-var pattern_collision_shapes: Array[CollisionShape3D] = []
+var pattern_collision_box: Node3D = null
+var pattern_container: Node3D = null
 
 @onready var cR: CharacterBody3D = $"."
 
@@ -116,6 +117,11 @@ func _ready():
 	nb_jumps_in_air_allowed_ref = nb_jumps_in_air_allowed
 	coyote_jump_cooldown_ref = coyote_jump_cooldown
 	
+	# Debug: Log CharacterBody3D collision settings
+	print("DEBUG: CharacterBody3D collision for peer " + str(player_peer_id) + ":")
+	print("  - Character collision_layer: " + str(collision_layer))
+	print("  - Character collision_mask: " + str(collision_mask))
+	
 	#set char model audios effects
 	godot_plush_skin.footstep.connect(func(intensity : float = 1.0):
 		foot_step_audio.volume_db = linear_to_db(intensity)
@@ -124,6 +130,11 @@ func _ready():
 		
 func _process(delta: float):
 	modify_model_orientation(delta)
+	
+	# Update board orientation to match camera (like an FPS weapon)
+	if pattern_container:
+		var camera_transform = get_camera_transform()
+		pattern_container.transform.basis = camera_transform.basis
 	
 	display_properties()
 	
@@ -135,7 +146,27 @@ func _physics_process(_delta : float):
 		var input_data = collect_input_data()
 		Game3D.receive_player_input.rpc(multiplayer.get_unique_id(), input_data)
 	
+	# Debug: Check for collisions after move_and_slide
+	var collision_count_before = get_slide_collision_count()
 	move_and_slide()
+	var collision_count_after = get_slide_collision_count()
+	
+	if collision_count_after > 0:
+		# Log collisions with pattern boxes and other players
+		for i in range(collision_count_after):
+			var collision = get_slide_collision(i)
+			var collider = collision.get_collider()
+			if collider:
+				if collider.get_class() == "CharacterBody3D":
+					print("DEBUG: Player " + str(player_peer_id) + " collided with PLAYER:")
+					print("  - Collided with: " + str(collider.name) + " (type: " + str(collider.get_class()) + ")")
+					if collider.has_method("get_collision_layer"):
+						print("    Collider layer: " + str(collider.get_collision_layer()))
+				elif collider.get_class() == "StaticBody3D":
+					var collider_layer = collider.collision_layer
+					# Check if it's a pattern box (layers 5-9 = values 32, 64, 128, 256, 512)
+					if collider_layer >= 32 and collider_layer <= 512:
+						print("PATTERN COLLISION: Player " + str(player_peer_id) + " hit pattern box on layer " + str(collider_layer))
 	
 	# Handle shooting with cooldown and just_pressed requirement
 	if get_input_just_pressed(shootAction):
@@ -153,10 +184,46 @@ func _physics_process(_delta : float):
 			for cellPos in pattern_to_shoot:
 				if pattern_to_shoot[cellPos] == true:
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
-					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
-					cell_3d.position = position_3d + self.position + (camera_transform.basis.z * -5)
-					cell_3d.add_constant_central_force(camera_transform.basis.z * -50)
 					Game3D.add_child(cell_3d)
+					
+					# Freeze the cell for testing alignment/sizing
+					cell_3d.freeze = true
+					
+					# Scale the mesh and collision shape to match board cell size (0.25 units)
+					var mesh_node = cell_3d.get_node("Mesh")
+					var collision_node = cell_3d.get_node("CollisionShape3D")
+					if mesh_node:
+						mesh_node.scale = Vector3(0.25, 0.25, 0.25)
+					if collision_node:
+						collision_node.scale = Vector3(0.25, 0.25, 0.25)
+					
+					# Scale spacing to match board (no flip needed now)
+					var local_position = Vector3(cellPos.x * 0.25, -cellPos.y * 0.25, 0)
+					
+					# Use camera transform for rotation since character body doesn't rotate
+					print("Camera forward: ", camera_transform.basis.z)
+					
+					# Transform the local position using camera's basis (which represents rotation)
+					var rotated_position = camera_transform.basis * local_position
+					
+					print("Local: ", local_position, " -> Rotated: ", rotated_position)
+					
+					# Board offset should be relative to the rotated board position
+					# The board is at (0, 1.25, 0.11) relative to character, but rotated
+					var board_relative_pos = Vector3(0, 1.25, 0.11)
+					var rotated_board_pos = camera_transform.basis * board_relative_pos
+					
+					# Spawn in front of the rotated board position (negative Z is forward)
+					var forward_offset = camera_transform.basis * Vector3(0, 0, -0.3)
+					var board_offset = rotated_board_pos + forward_offset
+					
+					# Position at character + rotated board offset + rotated pattern position
+					cell_3d.position = self.position + board_offset + rotated_position
+					
+					# Rotate the cell to match character's orientation
+					cell_3d.transform.basis = camera_transform.basis
+					
+					# Removed force application since cells are frozen
 
 	
 func display_properties():
@@ -189,15 +256,18 @@ func modify_model_orientation(delta : float):
 	if cam_aimed and follow_cam_pos_when_aimed and !godot_plush_skin.ragdoll:
 		#get cam rotation on the y axis (+ PI to invert half circle, and be sure that the model is correctly oriented)
 		dir_target_angle = camera_rotation.y + PI
-		#rotate the model on the y axis
+		#rotate the visual model on the y axis
 		visual_root.rotation.y = rotate_toward(visual_root.rotation.y, dir_target_angle, model_rot_speed * delta)
 	
 	#free mode (the model orientation is independant to the camera one)
 	if (!cam_aimed or !follow_cam_pos_when_aimed) and move_dir != Vector2.ZERO:
 		#get char move direction
 		dir_target_angle = -move_dir.orthogonal().angle()
-		#rotate the model on the y axis
+		#rotate the visual model on the y axis
 		visual_root.rotation.y = rotate_toward(visual_root.rotation.y, dir_target_angle, model_rot_speed * delta)
+	
+	# Sync pattern and collision elements with visual root rotation
+	_sync_pattern_rotation()
 		
 func modify_physics_properties():
 	last_frame_position = position #get play char position every frame
@@ -296,62 +366,25 @@ func create_pattern_model():
 		print("No pattern available, keeping default model")
 		return
 	
-	# Hide the default model and collision
+	# Hide the default model
 	if godot_plush_skin:
 		godot_plush_skin.visible = false
 	
-	# Keep the original collision for movement, but make it invisible
-	# The pattern collision shapes will handle hitbox detection
+	# Create pattern container node
+	pattern_container = Node3D.new()
+	pattern_container.name = "PatternContainer"
+	add_child(pattern_container)
 	
-	# Calculate pattern bounds for centering
-	var min_pos = Vector2(INF, INF)
-	var max_pos = Vector2(-INF, -INF)
+	# Create individual cells based on pattern
+	_create_pattern_cells(pattern)
 	
-	for cell_pos in pattern:
-		if pattern[cell_pos] == true:
-			min_pos.x = min(min_pos.x, cell_pos.x)
-			min_pos.y = min(min_pos.y, cell_pos.y)
-			max_pos.x = max(max_pos.x, cell_pos.x)
-			max_pos.y = max(max_pos.y, cell_pos.y)
-	
-	var pattern_center_x = (min_pos.x + max_pos.x) / 2.0
-	var pattern_bottom_y = max_pos.y  # Bottom of pattern (highest Y value in 2D)
-	var pattern_size = max_pos - min_pos
-	
-	# Scale factor to make character appropriately sized (roughly 2 units tall)
-	var scale_factor = 0.5  # Adjust this to make character bigger/smaller
-	
-	# Create static visual cells for the pattern (no physics)
-	for cell_pos in pattern:
-		if pattern[cell_pos] == true:
-			# Create a static visual cell instead of physics-enabled Cell3D
-			var static_cell = _create_static_cell()
-			
-			# Position relative to pattern center horizontally, but bottom-aligned vertically
-			var relative_x = cell_pos.x - pattern_center_x
-			var relative_y = cell_pos.y - pattern_bottom_y  # Offset from bottom
-			# Add 0.5 to lift the bottom cells so their bottom face sits on the floor
-			var world_pos = Vector3(relative_x * scale_factor, (-relative_y * scale_factor) + (0.5 * scale_factor), 0)
-			
-			static_cell.position = world_pos
-			static_cell.scale = Vector3.ONE * scale_factor
-			
-			# Add to visual root
-			visual_root.add_child(static_cell)
-			pattern_model_cells.append(static_cell)
-			
-			# Create individual collision shape for this cell
-			var collision_shape = CollisionShape3D.new()
-			var box_shape = BoxShape3D.new()
-			box_shape.size = Vector3.ONE * scale_factor
-			collision_shape.shape = box_shape
-			collision_shape.position = world_pos
-			
-			# Add collision shape to the character body
-			add_child(collision_shape)
-			pattern_collision_shapes.append(collision_shape)
-			
-			print("Added pattern cell and collision at " + str(world_pos))
+	# Set collision to match the board shape
+	if collision_shape_3d:
+		var box_shape = BoxShape3D.new()
+		box_shape.size = Vector3(2.5, 2.5, 0.2)  # Same as visual board
+		collision_shape_3d.shape = box_shape
+		collision_shape_3d.position = Vector3(0, 1.25, 0)  # Same position as visual board
+		collision_shape_3d.rotation = Vector3.ZERO
 
 func _create_static_cell() -> Node3D:
 	# Create a static visual cell (no physics) that looks like Cell3D
@@ -371,18 +404,406 @@ func _create_static_cell() -> Node3D:
 	
 	return static_cell
 
-func clear_pattern_model():
-	# Remove existing pattern cells
-	for cell in pattern_model_cells:
-		if cell and is_instance_valid(cell):
-			cell.queue_free()
-	pattern_model_cells.clear()
+func _create_pattern_monolith(pattern: Dictionary):
+	# Create a simple box monolith with pattern texture
+	var monolith = MeshInstance3D.new()
+	var box_mesh = BoxMesh.new()
+	box_mesh.size = Vector3(1.0, 2.0, 0.5)  # Standard monolith size for all players
+	monolith.mesh = box_mesh
 	
-	# Remove pattern collision shapes
-	for collision_shape in pattern_collision_shapes:
-		if collision_shape and is_instance_valid(collision_shape):
-			collision_shape.queue_free()
-	pattern_collision_shapes.clear()
+	# Create material with pattern texture
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color.WHITE  # Let texture control color
+	material.metallic = 0.0
+	material.roughness = 0.5
+	
+	# Create pattern texture
+	_create_pattern_texture(material, pattern)
+	
+	monolith.material_override = material
+	monolith.position = Vector3(0, 0.0, 0)  # Put monolith center at player center
+	
+	print("DEBUG: Monolith - height: " + str(box_mesh.size.y) + ", position: " + str(monolith.position) + ", bottom should be at: " + str(monolith.position.y - box_mesh.size.y/2))
+	
+	pattern_container.add_child(monolith)
+	pattern_model_cells.append(monolith)
+	
+	# Keep collision capsule as default (no custom collision box needed)
+	print("DEBUG: Created monolith for player " + str(player_peer_id))
+
+func _create_pattern_cells(pattern: Dictionary):
+	# Create a simple box for the character body
+	var character_mesh = MeshInstance3D.new()
+	var box_mesh = BoxMesh.new()
+	box_mesh.size = Vector3(2.5, 2.5, 0.2)  # Half size: 5*0.5 wide/tall, thin depth
+	character_mesh.mesh = box_mesh
+	character_mesh.position = Vector3(0, 1.25, 0)  # Bottom at ground level (y=0)
+	
+	# Simple material for the box (dark color)
+	var box_material = StandardMaterial3D.new()
+	box_material.albedo_color = Color(0.2, 0.2, 0.2)
+	character_mesh.material_override = box_material
+	
+	pattern_container.add_child(character_mesh)
+	pattern_model_cells.append(character_mesh)
+	
+	# Create Sprite3D for the pattern display
+	var pattern_sprite = Sprite3D.new()
+	pattern_sprite.position = Vector3(0, 1.25, 0.11)  # Match box position, slightly in front
+	pattern_sprite.pixel_size = 2.5 / 32.0  # Scale to match box size (2.5 units / 32 pixels)
+	pattern_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST  # Sharp pixels
+	pattern_sprite.flip_h = false  # Don't flip front sprite
+	
+	# Generate texture for the sprite
+	var texture = _create_board_sprite_texture(pattern)
+	pattern_sprite.texture = texture
+	
+	pattern_container.add_child(pattern_sprite)
+	pattern_model_cells.append(pattern_sprite)
+	
+	# Create back sprite (dimmer, horizontally flipped)
+	var back_sprite = Sprite3D.new()
+	back_sprite.position = Vector3(0, 1.25, -0.11)  # Behind the box
+	back_sprite.pixel_size = 2.5 / 32.0  # Same scale as front
+	back_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	back_sprite.flip_h = false  # Back sprite not flipped
+	back_sprite.modulate = Color(0.5, 0.5, 0.5, 1.0)  # Dimmer (50% brightness)
+	
+	# Use same texture as front
+	back_sprite.texture = texture
+	
+	pattern_container.add_child(back_sprite)
+	pattern_model_cells.append(back_sprite)
+	
+	print("DEBUG: Created box character with front and back sprite patterns for player " + str(player_peer_id))
+
+func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
+	if pattern.is_empty():
+		print("DEBUG: Pattern is empty, skipping texture creation")
+		return
+	
+	print("DEBUG: Creating pattern texture with " + str(pattern.size()) + " cells")
+	
+	# Find pattern bounds
+	var min_x = INF
+	var max_x = -INF
+	var min_y = INF
+	var max_y = -INF
+	
+	for pos in pattern.keys():
+		if pattern[pos] == true:
+			min_x = min(min_x, pos.x)
+			max_x = max(max_x, pos.x)
+			min_y = min(min_y, pos.y)
+			max_y = max(max_y, pos.y)
+	
+	if min_x == INF:
+		print("DEBUG: No active cells found in pattern")
+		return
+	
+	print("DEBUG: Pattern bounds - X: " + str(min_x) + " to " + str(max_x) + ", Y: " + str(min_y) + " to " + str(max_y))
+	
+	# Create texture size (make it a power of 2 for better compatibility)
+	var pattern_width = int(max_x - min_x + 1)
+	var pattern_height = int(max_y - min_y + 1)
+	var texture_size = 32  # Fixed 32x32 texture size
+	
+	# Create ImageTexture using the correct Godot 4 method
+	var image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGB8)
+	image.fill(Color(0.2, 0.2, 0.2))  # Dark background (no alpha)
+	
+	print("DEBUG: Created " + str(texture_size) + "x" + str(texture_size) + " image")
+	
+	# Draw pattern cells as bright pixels
+	var cells_drawn = 0
+	for pos in pattern.keys():
+		if pattern[pos] == true:
+			var tex_x = int(pos.x - min_x)
+			var tex_y = int(pos.y - min_y)
+			
+			# Scale to fit texture and tile
+			var scale_x = float(texture_size) / float(pattern_width)
+			var scale_y = float(texture_size) / float(pattern_height)
+			var scale = min(scale_x, scale_y)
+			
+			var pixel_x = int(tex_x * scale) % texture_size
+			var pixel_y = int(tex_y * scale) % texture_size
+			
+			# Draw a small 2x2 block for visibility
+			for dx in range(2):
+				for dy in range(2):
+					var px = (pixel_x + dx) % texture_size
+					var py = (pixel_y + dy) % texture_size
+					image.set_pixel(px, py, Color(0.431797, 0.783099, 0.415405))
+			cells_drawn += 1
+	
+	print("DEBUG: Drew " + str(cells_drawn) + " pattern cells on texture")
+	
+	# Create texture and apply to material
+	var texture = ImageTexture.new()
+	texture.set_image(image)
+	material.albedo_texture = texture
+	material.uv1_scale = Vector3(2, 2, 1)  # Scale UV to show pattern clearly
+	
+	print("DEBUG: Applied texture to material")
+
+func _create_board_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
+	# Create a 10x10 texture for the board with live cells marked
+	var texture_size = 32  # Use 32x32 for clear pixel art look
+	var image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGB8)
+	
+	# Fill with dark background
+	image.fill(Color(0.1, 0.1, 0.1))  # Dark gray background
+	
+	# Draw each cell in the 10x10 grid
+	var pixels_per_cell = texture_size / 10  # 3.2 pixels per cell for 32x32
+	
+	for cell_y in range(10):
+		for cell_x in range(10):
+			# Convert to grid coordinates (-5 to 4)
+			var grid_pos = Vector2(cell_x - 5, cell_y - 5)
+			
+			# Calculate pixel position
+			var pixel_start_x = int(cell_x * pixels_per_cell)
+			var pixel_start_y = int(cell_y * pixels_per_cell)
+			var pixel_end_x = int((cell_x + 1) * pixels_per_cell)
+			var pixel_end_y = int((cell_y + 1) * pixels_per_cell)
+			
+			# Choose color based on if cell is alive
+			var cell_color = Color(0.2, 0.2, 0.2)  # Dead cell - slightly lighter gray
+			if pattern.has(grid_pos) and pattern[grid_pos] == true:
+				cell_color = Color(0.0, 1.0, 0.0)  # Live cell - bright green
+			
+			# Fill the cell area
+			for py in range(pixel_start_y, pixel_end_y):
+				for px in range(pixel_start_x, pixel_end_x):
+					if px < texture_size and py < texture_size:
+						image.set_pixel(px, py, cell_color)
+	
+	# Create texture and apply to material
+	var texture = ImageTexture.new()
+	texture.set_image(image)
+	material.albedo_texture = texture
+	
+	# Disable texture filtering for sharp pixel art look
+	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	
+	# Set UV scale to prevent texture wrapping/stretching
+	material.uv1_scale = Vector3(1, 1, 1)
+	
+	print("DEBUG: Created board pattern texture with " + str(pattern.size()) + " live cells")
+
+func _create_board_sprite_texture(pattern: Dictionary) -> ImageTexture:
+	# Create a 32x32 texture for the sprite
+	var texture_size = 32
+	var image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGBA8)
+	
+	# Fill with transparent background
+	image.fill(Color(0, 0, 0, 0))
+	
+	# Draw each cell in the 10x10 grid
+	var pixels_per_cell = texture_size / 10
+	
+	for cell_y in range(10):
+		for cell_x in range(10):
+			# Convert to grid coordinates (-5 to 4)
+			var grid_pos = Vector2(cell_x - 5, cell_y - 5)
+			
+			# Calculate pixel position
+			var pixel_start_x = int(cell_x * pixels_per_cell)
+			var pixel_start_y = int(cell_y * pixels_per_cell)
+			var pixel_end_x = int((cell_x + 1) * pixels_per_cell)
+			var pixel_end_y = int((cell_y + 1) * pixels_per_cell)
+			
+			# Only draw live cells (dead cells stay transparent)
+			if pattern.has(grid_pos) and pattern[grid_pos] == true:
+				var cell_color = Color(0.0, 1.0, 0.0, 1.0)  # Bright green, fully opaque
+				
+				# Fill the cell area
+				for py in range(pixel_start_y, pixel_end_y):
+					for px in range(pixel_start_x, pixel_end_x):
+						if px < texture_size and py < texture_size:
+							image.set_pixel(px, py, cell_color)
+	
+	# Create and return texture
+	var texture = ImageTexture.new()
+	texture.set_image(image)
+	
+	print("DEBUG: Created sprite texture with " + str(pattern.size()) + " live cells")
+	return texture
+
+func _create_pattern_collision_box(min_pos: Vector2, max_pos: Vector2, pattern_center_x: float, pattern_bottom_y: float, scale_factor: float, pattern: Dictionary):
+	# Calculate bounding box size for the entire pattern
+	var pattern_width = (max_pos.x - min_pos.x + 1) * scale_factor
+	var pattern_height = (max_pos.y - min_pos.y + 1) * scale_factor
+	var pattern_depth = scale_factor  # 1 block deep
+	
+	# Calculate collision box center position to match visual pattern positioning
+	# Visual cells use: (-relative_y * scale_factor) + (0.5 * scale_factor)
+	# For a pattern with min_pos.y to max_pos.y range:
+	# - Bottom cell (at max_pos.y) is at y = 0.5 * scale_factor  
+	# - Top cell (at min_pos.y) is at y = (max_pos.y - min_pos.y) * scale_factor + 0.5 * scale_factor
+	var pattern_bottom_world_y = 0.5 * scale_factor
+	var pattern_top_world_y = pattern_height - (0.5 * scale_factor)
+	var collision_center_y = pattern_height / 2
+	
+	# Replace the character's collision shape with pattern-sized box
+	if collision_shape_3d and collision_shape_3d.shape:
+		var box_shape = BoxShape3D.new()
+		box_shape.size = Vector3(pattern_width, pattern_height, pattern_depth)
+		collision_shape_3d.shape = box_shape
+		
+		collision_shape_3d.position = Vector3(0, collision_center_y, 0)
+		
+		print("DEBUG: Created collision box for player " + str(player_peer_id))
+		print("  - Box size: " + str(box_shape.size))
+		print("  - Box position: " + str(collision_shape_3d.position))
+		print("  - Pattern height: " + str(pattern_height) + ", scale: " + str(scale_factor))
+		print("  - Bottom Y: " + str(pattern_bottom_world_y) + ", Top Y: " + str(pattern_top_world_y) + ", Center Y: " + str(collision_center_y))
+	
+	# Create collision visualization showing only empty spaces
+	_create_collision_negative_space(min_pos, max_pos, pattern, pattern_center_x, pattern_bottom_y, scale_factor, Vector3(0, collision_center_y, 0))
+
+func _create_visual_collision_box(width: float, height: float, depth: float, pos: Vector3):
+	# Create a container for multiple thin boxes that form a hollow outline
+	pattern_collision_box = Node3D.new()
+	pattern_collision_box.position = pos
+	
+	# Create 12 thin boxes to form the edges of a wireframe cube
+	var edge_thickness = 0.02
+	var edges = [
+		# Bottom edges
+		Vector3(width, edge_thickness, edge_thickness), Vector3(0, -depth/2, -height/2),  # Bottom front
+		Vector3(width, edge_thickness, edge_thickness), Vector3(0, depth/2, -height/2),   # Bottom back
+		Vector3(edge_thickness, edge_thickness, depth), Vector3(-width/2, 0, -height/2), # Bottom left
+		Vector3(edge_thickness, edge_thickness, depth), Vector3(width/2, 0, -height/2),  # Bottom right
+		# Top edges
+		Vector3(width, edge_thickness, edge_thickness), Vector3(0, -depth/2, height/2),   # Top front
+		Vector3(width, edge_thickness, edge_thickness), Vector3(0, depth/2, height/2),    # Top back
+		Vector3(edge_thickness, edge_thickness, depth), Vector3(-width/2, 0, height/2),  # Top left
+		Vector3(edge_thickness, edge_thickness, depth), Vector3(width/2, 0, height/2),   # Top right
+		# Vertical edges
+		Vector3(edge_thickness, depth, edge_thickness), Vector3(-width/2, 0, 0),  # Left front
+		Vector3(edge_thickness, depth, edge_thickness), Vector3(width/2, 0, 0),   # Right front
+		Vector3(edge_thickness, depth, edge_thickness), Vector3(-width/2, 0, 0),  # Left back
+		Vector3(edge_thickness, depth, edge_thickness), Vector3(width/2, 0, 0),   # Right back
+	]
+	
+	# Create material for edges
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 0.0, 0.0, 0.8)
+	material.flags_unshaded = true
+	
+	# Create edge meshes (simplified to just corners for now)
+	for i in range(0, min(edges.size(), 8), 2):
+		var edge_mesh = MeshInstance3D.new()
+		var box_mesh = BoxMesh.new()
+		box_mesh.size = edges[i]
+		edge_mesh.mesh = box_mesh
+		edge_mesh.material_override = material
+		edge_mesh.position = edges[i + 1]
+		pattern_collision_box.add_child(edge_mesh)
+	
+	pattern_container.add_child(pattern_collision_box)
+	
+	print("DEBUG: Created visual collision edges at " + str(pos) + " with size " + str(Vector3(width, height, depth)))
+
+func _create_collision_corners(width: float, height: float, depth: float, pos: Vector3):
+	# Create small corner indicators that show collision bounds without z-fighting
+	pattern_collision_box = Node3D.new()
+	pattern_collision_box.position = pos
+	
+	var corner_size = 0.05
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 0.0, 0.0, 0.9)
+	material.flags_unshaded = true
+	
+	# Create 8 corner indicators
+	var corners = [
+		Vector3(-width/2, -height/2, -depth/2),  # Bottom corners
+		Vector3(width/2, -height/2, -depth/2),
+		Vector3(-width/2, -height/2, depth/2),
+		Vector3(width/2, -height/2, depth/2),
+		Vector3(-width/2, height/2, -depth/2),   # Top corners
+		Vector3(width/2, height/2, -depth/2),
+		Vector3(-width/2, height/2, depth/2),
+		Vector3(width/2, height/2, depth/2),
+	]
+	
+	for corner_pos in corners:
+		var corner = MeshInstance3D.new()
+		var sphere_mesh = SphereMesh.new()
+		sphere_mesh.radius = corner_size
+		sphere_mesh.height = corner_size * 2
+		corner.mesh = sphere_mesh
+		corner.material_override = material
+		corner.position = corner_pos
+		pattern_collision_box.add_child(corner)
+	
+	pattern_container.add_child(pattern_collision_box)
+	print("DEBUG: Created collision corner indicators at " + str(pos))
+
+func _create_collision_negative_space(min_pos: Vector2, max_pos: Vector2, pattern: Dictionary, pattern_center_x: float, pattern_bottom_y: float, scale_factor: float, collision_pos: Vector3):
+	# Create collision visualization that fills empty spaces in the bounding box
+	pattern_collision_box = Node3D.new()
+	# Don't offset the container - position each cell individually like the pattern cells
+	
+	# Create semi-transparent material for empty spaces
+	var material = StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 0.0, 0.0, 0.3)  # Semi-transparent red
+	material.flags_transparent = true
+	material.flags_unshaded = true
+	
+	# Iterate through every position in the bounding box
+	for x in range(int(min_pos.x), int(max_pos.x) + 1):
+		for y in range(int(min_pos.y), int(max_pos.y) + 1):
+			var cell_pos = Vector2(x, y)
+			
+			# Only create a cube if this position is NOT in the pattern
+			if not pattern.has(cell_pos) or pattern[cell_pos] != true:
+				var empty_cell = MeshInstance3D.new()
+				var box_mesh = BoxMesh.new()
+				box_mesh.size = Vector3.ONE  # Standard 1x1x1 box, same as pattern cells
+				empty_cell.mesh = box_mesh
+				empty_cell.material_override = material
+				
+				# Position relative to pattern center (same logic as pattern cells)
+				var relative_x = cell_pos.x - pattern_center_x
+				var relative_y = cell_pos.y - pattern_bottom_y
+				var world_pos = Vector3(relative_x * scale_factor, (-relative_y * scale_factor) + (0.5 * scale_factor), 0)
+				
+				empty_cell.position = world_pos
+				empty_cell.scale = Vector3.ONE * scale_factor  # Same scaling as pattern cells
+				pattern_collision_box.add_child(empty_cell)
+	
+	pattern_container.add_child(pattern_collision_box)
+	print("DEBUG: Created collision negative space visualization")
+
+func _sync_pattern_rotation():
+	# Sync collision shape rotation with visual root
+	if collision_shape_3d:
+		collision_shape_3d.rotation.y = visual_root.rotation.y
+	
+	# Rotate the entire pattern container as one unit
+	if pattern_container and is_instance_valid(pattern_container):
+		pattern_container.rotation.y = visual_root.rotation.y
+
+func clear_pattern_model():
+	# Remove pattern container (which includes all pattern cells and visual collision box)
+	if pattern_container and is_instance_valid(pattern_container):
+		pattern_container.queue_free()
+		pattern_container = null
+	
+	pattern_model_cells.clear()
+	pattern_collision_box = null
+	
+	# Reset collision shape to default capsule
+	if collision_shape_3d:
+		var capsule_shape = CapsuleShape3D.new()
+		capsule_shape.radius = 0.5
+		capsule_shape.height = 2.0
+		collision_shape_3d.shape = capsule_shape
+		collision_shape_3d.position = Vector3.ZERO
 	
 	# Show default model
 	if godot_plush_skin:

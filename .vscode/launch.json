@@ -12,8 +12,8 @@
             "debug_collisions": false,
             "debug_paths": false,
             "debug_navigation": false,
-            "additional_options": "--screen 0"
-      
+            "additional_options": "--screen 1"
+
         }
     ]
 }

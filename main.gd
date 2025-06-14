@@ -19,6 +19,21 @@ const CELL_SIZE = 64.0
 
 var grids = {"active": {}, "future": {}}
 
+func _ready():
+	pass
+
+func _draw():
+	# Draw 10x10 grid boundary
+	var boundary_color = Color.WHITE
+	var line_width = 2.0 / $Camera2D.zoom.x  # Scale line width with zoom
+	
+	# Calculate boundary rectangle centered on 0,0
+	var grid_size = Vector2(10, 10) * CELL_SIZE
+	var start_pos = -grid_size / 2
+	
+	# Draw rectangle outline
+	draw_rect(Rect2(start_pos, grid_size), boundary_color, false, line_width)
+
 
 func calculate_future_of_grid():
 	for cellKey in visualCells.keys():
@@ -76,6 +91,7 @@ var zoom: float = 1.0
 func change_zoom(dz: float):
 	zoom = clamp(zoom + dz, 0.1, 8.0)
 	$Camera2D.zoom = Vector2(zoom, zoom)
+	queue_redraw()  # Redraw boundary with new zoom
 	
 func move_camera(dv: Vector2):
 	$Camera2D.offset -= dv
@@ -84,6 +100,11 @@ func move_camera(dv: Vector2):
 func place_or_remove_cell(pos: Vector2):
 	pos = mouse_pos_to_cam_pos(pos)
 	var gridPos: GridPos = get_pos_in_grid_units(pos)
+	
+	# Restrict to 10x10 grid centered on 0,0 (-5 to 4 in both x and y)
+	if gridPos.vector.x < -5 or gridPos.vector.x >= 5 or gridPos.vector.y < -5 or gridPos.vector.y >= 5:
+		return
+	
 	if not visualCells.has(gridPos.vector):
 		place_data_cell(gridPos)
 		place_visual_cell(gridPos)
@@ -118,8 +139,7 @@ func remove_visual_cell(gridPos: GridPos):
 
 func get_pos_in_grid_units(pos: Vector2) -> GridPos:
 	var gridPos: GridPos = GridPos.new()
-	var pixelsPerCellSide = CELL_SIZE  * $Camera2D.zoom.x
-	gridPos.vector = (pos / pixelsPerCellSide).floor()
+	gridPos.vector = (pos / CELL_SIZE).floor()
 	return gridPos
 	
 func start_stop():
@@ -139,7 +159,7 @@ func reset():
 		print('reset stage')
 
 func mouse_pos_to_cam_pos(pos):
-	return pos + $Camera2D.offset / $Camera2D.zoom - get_viewport_rect().size / 2
+	return (pos - get_viewport_rect().size / 2) / $Camera2D.zoom + $Camera2D.offset
 
 func _on_timer_timeout():
 	print("tick")

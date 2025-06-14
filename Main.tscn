@@ -16,7 +16,4 @@ metadata/_edit_use_anchors_ = true
 
 [node name="Camera2D" type="Camera2D" parent="."]
 
-[node name="Cell2" parent="." instance=ExtResource("2_uu6xs")]
-color = Color(0.34535, 0.770655, 1, 1)
-
 [connection signal="timeout" from="Timer" to="." method="_on_timer_timeout"]
