@@ -64,3 +64,6 @@ This is a Godot project - open `project.godot` in Godot Engine 4.4+ to run/test 
 - Multiplayer port: 3006 (game_3d.gd:19)
 - Character uses CharacterBody3D with custom gravity calculations
 - Pattern shooting spawns RigidBody3D instances of colony cells
+
+## Known Issues
+- Canceling scan still not working
