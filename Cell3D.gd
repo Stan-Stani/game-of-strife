@@ -74,7 +74,8 @@ func _deal_damage_to_player(player_body):
 	
 	# Make sure it's actually a player character with health system
 	if player_body.has_method("take_damage"):
-		var damage_amount = 25.0  # Each bullet does 25 damage (4 shots to kill)
+		# Use stored damage amount (scaled by pattern size) or fallback to default
+		var damage_amount = get_meta("damage_amount") if has_meta("damage_amount") else 25.0
 		var shooter_id = get_meta("owner_peer_id") if has_meta("owner_peer_id") else -1
 		
 		# Prevent self-damage

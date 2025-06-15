@@ -220,6 +220,22 @@ func _physics_process(delta : float):
 			# Get the pattern for this specific player character (based on which peer they represent)
 			var pattern_to_shoot = Game3D.get_player_pattern(player_peer_id)
 			
+			# Count cells in pattern to calculate damage/velocity scaling
+			var cell_count = 0
+			for cellPos in pattern_to_shoot:
+				if pattern_to_shoot[cellPos] == true:
+					cell_count += 1
+			
+			# Calculate scaling factors based on cell count
+			# Base damage: 25 per bullet, scaled down with more cells
+			# Base velocity: 20, scaled down with more cells
+			var damage_scale = max(0.2, 1.0 / sqrt(cell_count))  # Minimum 20% damage
+			var velocity_scale = max(0.3, 1.0 / sqrt(cell_count))  # Minimum 30% velocity
+			var scaled_damage = 25.0 * damage_scale
+			var scaled_velocity = 20.0 * velocity_scale
+			
+			print("Pattern has " + str(cell_count) + " cells - damage per bullet: " + str(scaled_damage) + ", velocity: " + str(scaled_velocity))
+			
 			for cellPos in pattern_to_shoot:
 				if pattern_to_shoot[cellPos] == true:
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
@@ -250,6 +266,7 @@ func _physics_process(delta : float):
 					cell_3d.set_meta("owner_peer_id", player_peer_id)
 					cell_3d.set_meta("owner_player", self)
 					cell_3d.set_meta("min_separation_distance", 2.0)  # Must be this far from owner to collide
+					cell_3d.set_meta("damage_amount", scaled_damage)  # Store scaled damage for this bullet
 					
 					# Prevent bullets from the same player from colliding with each other
 					_prevent_bullet_self_collision(cell_3d, player_peer_id)
@@ -289,10 +306,9 @@ func _physics_process(delta : float):
 					# Rotate the cell to match character's orientation
 					cell_3d.transform.basis = camera_transform.basis
 					
-					# Apply forward velocity based on camera direction
-					var forward_force = 20.0  # Bullet speed
+					# Apply forward velocity based on camera direction (scaled by pattern size)
 					var forward_direction = -camera_transform.basis.z  # Forward is negative Z
-					cell_3d.linear_velocity = forward_direction * forward_force
+					cell_3d.linear_velocity = forward_direction * scaled_velocity
 					
 					print("DEBUG: Bullet velocity: " + str(cell_3d.linear_velocity))
 					
