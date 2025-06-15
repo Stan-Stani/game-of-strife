@@ -111,7 +111,6 @@ hit_wall_cut_velocity = true
 model_rot_speed = 6.5
 ragdoll_gravity = 24.0
 ragdoll_on_floor_only = true
-follow_cam_pos_when_aimed = true
 
 [node name="VisualRoot" type="Node3D" parent="."]
 unique_name_in_owner = true

@@ -342,6 +342,21 @@ func _update_player_pattern_model(peer_id: int):
 	else:
 		print("No player character found for peer " + str(peer_id))
 
+# Collision layer mapping for peer IDs
+var peer_to_layer_map = {}
+var next_layer_id = 1
+
+func get_collision_layer_for_peer(peer_id: int) -> int:
+	# Map peer IDs to collision layers 1-4 (supports up to 4 players)
+	if not peer_to_layer_map.has(peer_id):
+		if next_layer_id > 4:
+			print("WARNING: Too many players! Using layer 4 for peer " + str(peer_id))
+			return 4
+		peer_to_layer_map[peer_id] = next_layer_id
+		next_layer_id += 1
+		print("DEBUG: Mapped peer " + str(peer_id) + " to collision layer " + str(peer_to_layer_map[peer_id]))
+	
+	return peer_to_layer_map[peer_id]
 
 
 # var has_loaded_cells = false

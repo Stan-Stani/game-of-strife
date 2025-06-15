@@ -1,4 +1,6 @@
-[gd_scene load_steps=5 format=3 uid="uid://baj77jb75yw4a"]
+[gd_scene load_steps=6 format=3 uid="uid://baj77jb75yw4a"]
+
+[ext_resource type="Script" uid="uid://cq0sw3epfsvah" path="res://Cell3D.gd" id="1_w8vc6"]
 
 [sub_resource type="PhysicsMaterial" id="PhysicsMaterial_xlgud"]
 bounce = 0.29
@@ -12,6 +14,7 @@ albedo_color = Color(0.431797, 0.783099, 0.415405, 1)
 
 [node name="Cell3D" type="RigidBody3D"]
 physics_material_override = SubResource("PhysicsMaterial_xlgud")
+script = ExtResource("1_w8vc6")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_xlgud")

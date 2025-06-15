@@ -76,7 +76,7 @@ var coyote_jump_on : bool = false
 @export var model_rot_speed : float
 @export var ragdoll_gravity : float
 @export var ragdoll_on_floor_only : bool = false
-@export var follow_cam_pos_when_aimed : bool = false
+@export var follow_cam_pos_when_aimed : bool = true
 
 #references variables
 @onready var visual_root = %VisualRoot
@@ -117,6 +117,8 @@ func _ready():
 	nb_jumps_in_air_allowed_ref = nb_jumps_in_air_allowed
 	coyote_jump_cooldown_ref = coyote_jump_cooldown
 	
+	# No need for special collision layers - bullets handle collision exceptions
+	
 	# Debug: Log CharacterBody3D collision settings
 	print("DEBUG: CharacterBody3D collision for peer " + str(player_peer_id) + ":")
 	print("  - Character collision_layer: " + str(collision_layer))
@@ -135,6 +137,15 @@ func _process(delta: float):
 	if pattern_container:
 		var camera_transform = get_camera_transform()
 		pattern_container.transform.basis = camera_transform.basis
+	
+	# Update collision shape orientation to match camera as well
+	if collision_shape_3d:
+		var camera_transform = get_camera_transform()
+		# Apply rotation and position offset in world space to match visual board
+		collision_shape_3d.transform.basis = camera_transform.basis
+		# The collision shape needs to be offset to match the visual board position when rotated
+		var board_offset = Vector3(0, 1.25, 0)
+		collision_shape_3d.position = camera_transform.basis * board_offset
 	
 	display_properties()
 	
@@ -186,8 +197,10 @@ func _physics_process(_delta : float):
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
 					Game3D.add_child(cell_3d)
 					
-					# Freeze the cell for testing alignment/sizing
-					cell_3d.freeze = true
+					# Store reference to owner player for collision checking
+					cell_3d.set_meta("owner_peer_id", player_peer_id)
+					cell_3d.set_meta("owner_player", self)
+					cell_3d.set_meta("min_separation_distance", 2.0)  # Must be this far from owner to collide
 					
 					# Scale the mesh and collision shape to match board cell size (0.25 units)
 					var mesh_node = cell_3d.get_node("Mesh")
@@ -223,7 +236,10 @@ func _physics_process(_delta : float):
 					# Rotate the cell to match character's orientation
 					cell_3d.transform.basis = camera_transform.basis
 					
-					# Removed force application since cells are frozen
+					# Apply forward velocity based on camera direction
+					var forward_force = 20.0  # Bullet speed
+					var forward_direction = -camera_transform.basis.z  # Forward is negative Z
+					cell_3d.linear_velocity = forward_direction * forward_force
 
 	
 func display_properties():
@@ -384,7 +400,7 @@ func create_pattern_model():
 		box_shape.size = Vector3(2.5, 2.5, 0.2)  # Same as visual board
 		collision_shape_3d.shape = box_shape
 		collision_shape_3d.position = Vector3(0, 1.25, 0)  # Same position as visual board
-		collision_shape_3d.rotation = Vector3.ZERO
+		# Don't reset rotation - let it be controlled by _process
 
 func _create_static_cell() -> Node3D:
 	# Create a static visual cell (no physics) that looks like Cell3D
@@ -780,13 +796,16 @@ func _create_collision_negative_space(min_pos: Vector2, max_pos: Vector2, patter
 	print("DEBUG: Created collision negative space visualization")
 
 func _sync_pattern_rotation():
-	# Sync collision shape rotation with visual root
+	# Sync the actual collision shape (physics) with camera rotation
 	if collision_shape_3d:
-		collision_shape_3d.rotation.y = visual_root.rotation.y
-	
-	# Rotate the entire pattern container as one unit
-	if pattern_container and is_instance_valid(pattern_container):
-		pattern_container.rotation.y = visual_root.rotation.y
+		var camera_transform = get_camera_transform()
+		# Store original position
+		var original_pos = collision_shape_3d.position
+		# Apply camera rotation to the collision shape
+		collision_shape_3d.transform.basis = camera_transform.basis
+		# Restore position (rotation might have changed it)
+		collision_shape_3d.position = original_pos
+
 
 func clear_pattern_model():
 	# Remove pattern container (which includes all pattern cells and visual collision box)
