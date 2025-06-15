@@ -93,12 +93,5 @@ func _on_body_exited(body):
 	pass
 
 func _create_impact_effect():
-	# Simple impact effect - change mesh material color briefly
-	var mesh_node = get_node("Mesh")
-	if mesh_node and mesh_node.get_surface_override_material(0):
-		var material = mesh_node.get_surface_override_material(0)
-		var original_color = material.albedo_color
-		material.albedo_color = Color.RED
-		
-		var tween = create_tween()
-		tween.tween_property(material, "albedo_color", original_color, 0.1)
+	# Impact effect without color change - bullets stay green
+	pass

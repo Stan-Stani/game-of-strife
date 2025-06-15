@@ -10,7 +10,7 @@ bounce = 0.29
 [sub_resource type="BoxMesh" id="BoxMesh_4xowi"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jjc1a"]
-albedo_color = Color(0.431797, 0.783099, 0.415405, 1)
+albedo_color = Color(0.154, 0.7, 0.1813, 1)
 
 [node name="Cell3D" type="RigidBody3D"]
 physics_material_override = SubResource("PhysicsMaterial_xlgud")
