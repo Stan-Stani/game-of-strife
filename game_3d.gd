@@ -289,9 +289,9 @@ func _scan_lan_for_games_ui():
 				for i in range(1, 255):
 					ips_to_scan.append(base_ip + str(i))
 			else:
-				print("Performing targeted scan (1-50)")
-				# Targeted scan - first 50 IPs (good compromise)
-				for i in range(1, 51):
+				print("Performing targeted scan (1-254)")
+				# Targeted scan - entire last byte (1-254)
+				for i in range(1, 255):
 					ips_to_scan.append(base_ip + str(i))
 	else:
 		print("Could not detect local IP, using default ranges only")
@@ -306,7 +306,7 @@ func _scan_lan_for_games_ui():
 	for ip_address in ips_to_scan:
 		# Check for cancellation before each IP test
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("Scan cancelled by user")
+			print("DEBUG: Scan cancellation detected before testing " + ip_address)
 			break
 		
 		if ip_address == local_ip:  # Skip scanning our own IP
@@ -325,7 +325,7 @@ func _scan_lan_for_games_ui():
 		
 		# Check for cancellation after each test (in case user cancelled during the test)
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("Scan cancelled by user")
+			print("DEBUG: Scan cancellation detected after testing " + ip_address)
 			break
 		
 		if is_server_active:
@@ -343,7 +343,10 @@ func _scan_lan_for_games_ui():
 				server_ui_instance.update_scanning_status(ip_address, "FAILED")
 				server_ui_instance.update_last_log_entry(ip_address, "FAILED - No server")
 		
-		# Small delay between scans to prevent resource exhaustion
+		# Small delay between scans to prevent resource exhaustion, but check for cancellation first
+		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+			print("DEBUG: Scan cancellation detected during inter-scan delay")
+			break
 		await get_tree().create_timer(0.01).timeout
 	
 	# Finish scanning
@@ -451,6 +454,11 @@ func _get_local_ip() -> String:
 	return ""
 
 func _test_server_at_ip(ip_address: String) -> bool:
+	# Check for cancellation before starting the connection test
+	if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+		print("  DEBUG: Connection test cancelled before starting for " + ip_address)
+		return false
+	
 	# Create a new peer for each test to avoid conflicts
 	var test_peer = ENetMultiplayerPeer.new()
 	
@@ -463,15 +471,15 @@ func _test_server_at_ip(ip_address: String) -> bool:
 	
 	print("  Created client connection attempt to " + ip_address)
 	
-	# Use a longer timeout for more reliable detection
-	var timeout = 0.5  # 500ms timeout - much more generous
+	# Use a shorter timeout but check more frequently for better responsiveness
+	var timeout = 0.2  # 200ms timeout - faster response
 	var start_time = Time.get_unix_time_from_system()
 	
-	# Simple polling loop with timeout AND cancellation check
+	# Simple polling loop with timeout AND cancellation check - much more frequent checks
 	while Time.get_unix_time_from_system() - start_time < timeout:
 		# Check for cancellation during the connection test
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("  CANCELLED: Connection test cancelled for " + ip_address)
+			print("  DEBUG: Connection test cancellation detected for " + ip_address)
 			test_peer.close()
 			return false
 		
@@ -479,19 +487,8 @@ func _test_server_at_ip(ip_address: String) -> bool:
 		test_peer.poll()
 		
 		var status = test_peer.get_connection_status()
-		var status_name = ""
-		match status:
-			MultiplayerPeer.CONNECTION_DISCONNECTED:
-				status_name = "DISCONNECTED"
-			MultiplayerPeer.CONNECTION_CONNECTING:
-				status_name = "CONNECTING"
-			MultiplayerPeer.CONNECTION_CONNECTED:
-				status_name = "CONNECTED"
-			_:
-				status_name = "UNKNOWN"
 		
-		print("  Status for " + ip_address + ": " + str(status) + " (" + status_name + ")")
-		
+		# Only print status changes to reduce spam, but check for results
 		if status == MultiplayerPeer.CONNECTION_CONNECTED:
 			print("  SUCCESS: Connected to " + ip_address)
 			test_peer.close()
@@ -501,8 +498,14 @@ func _test_server_at_ip(ip_address: String) -> bool:
 			test_peer.close()
 			return false
 		
-		# Very short frame wait
-		await get_tree().process_frame
+		# Check for cancellation again before the frame wait
+		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+			print("  DEBUG: Connection test cancellation detected (second check) for " + ip_address)
+			test_peer.close()
+			return false
+		
+		# Much shorter wait for faster cancellation response
+		await get_tree().create_timer(0.01).timeout
 	
 	# Cleanup and return false for timeout
 	print("  TIMEOUT: No response from " + ip_address + " after " + str(timeout) + "s")
