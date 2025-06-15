@@ -1,5 +1,10 @@
 extends CharacterBody3D
 
+# Health and death signals
+signal health_changed(new_health: float, max_health: float)
+signal player_died(player: CharacterBody3D)
+signal player_respawned(player: CharacterBody3D)
+
 # multiplayer variables
 var is_remote = false
 var player_peer_id = 1  # Which peer this player represents (for pattern shooting)
@@ -11,6 +16,14 @@ var input_buffer = []
 # shooting variables
 var shoot_cooldown_time = 0.5  # Half second between shots
 var last_shoot_time = 0.0
+
+# health variables
+var max_health: float = 100.0
+var current_health: float = 100.0
+var is_dead: bool = false
+var respawn_timer: float = 0.0
+var respawn_delay: float = 3.0  # 3 seconds respawn delay
+var death_time: float = 0.0
 
 #movement variables
 var move_speed : float
@@ -117,6 +130,10 @@ func _ready():
 	nb_jumps_in_air_allowed_ref = nb_jumps_in_air_allowed
 	coyote_jump_cooldown_ref = coyote_jump_cooldown
 	
+	# Initialize health
+	current_health = max_health
+	is_dead = false
+	
 	# No need for special collision layers - bullets handle collision exceptions
 	
 	# Make local player translucent to themselves
@@ -149,8 +166,14 @@ func _process(delta: float):
 	
 	display_properties()
 	
-func _physics_process(_delta : float):
+func _physics_process(delta : float):
 	modify_physics_properties()
+	
+	# Handle respawn timer for dead players
+	if is_dead and respawn_timer > 0.0:
+		respawn_timer -= delta
+		if respawn_timer <= 0.0:
+			_handle_respawn()
 	
 	if !is_remote and is_multiplayer_authority():
 		# Collect and send input data
@@ -176,8 +199,18 @@ func _physics_process(_delta : float):
 					if collider_layer >= 32 and collider_layer <= 512:
 						pass
 	
-	# Handle shooting with cooldown and just_pressed requirement
-	if get_input_just_pressed(shootAction):
+	# Handle healing (for testing) - Enter key
+	if Input.is_action_just_pressed("ui_accept") and not is_dead:  # Using ui_accept (Enter) for now
+		heal(25.0)  # Heal 25 HP
+		print("DEBUG: Manual heal triggered - Health: " + str(current_health))
+	
+	# Handle manual damage (for testing) - P key  
+	if Input.is_action_just_pressed("ui_cancel") and not is_dead:  # Using ui_cancel (Escape) for now
+		take_damage(25.0, -1)  # Take 25 damage
+		print("DEBUG: Manual damage triggered - Health: " + str(current_health))
+	
+	# Handle shooting with cooldown and just_pressed requirement (but not if dead)
+	if get_input_just_pressed(shootAction) and not is_dead:
 		var current_timestamp = Time.get_unix_time_from_system()
 		
 		if current_timestamp - last_shoot_time >= shoot_cooldown_time:
@@ -190,16 +223,28 @@ func _physics_process(_delta : float):
 			for cellPos in pattern_to_shoot:
 				if pattern_to_shoot[cellPos] == true:
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
-					Game3D.add_child(cell_3d)
 					
-					# Configure bullet physics for better collision detection
+					# Configure bullet physics BEFORE adding to scene
 					cell_3d.continuous_cd = true  # Enable continuous collision detection
 					cell_3d.contact_monitor = true  # Enable contact monitoring
 					cell_3d.max_contacts_reported = 10  # Allow multiple contact reports
 					
+					print("DEBUG: Created bullet with contact_monitor: " + str(cell_3d.contact_monitor))
+					
+					# Add to scene AFTER configuring physics
+					Game3D.add_child(cell_3d)
+					
 					# Set collision layers: bullets on layer 8, collide with players (layer 3) and environment (layers 1,2)
 					cell_3d.collision_layer = 256  # Layer 8 (2^8 = 256) - bullets
 					cell_3d.collision_mask = 1 + 2 + 4 + 256  # Layers 1,2,3,8 (environment + players + bullets)
+					
+					print("DEBUG: Player collision layer: " + str(self.collision_layer))
+					print("DEBUG: Bullet collision mask: " + str(cell_3d.collision_mask))
+					
+					# Ensure collision signals are connected (backup in case Cell3D._ready doesn't work)
+					if not cell_3d.body_entered.is_connected(cell_3d._on_body_entered):
+						cell_3d.body_entered.connect(cell_3d._on_body_entered)
+						print("DEBUG: Manually connected body_entered signal")
 					
 					# Store reference to owner player for collision checking
 					cell_3d.set_meta("owner_peer_id", player_peer_id)
@@ -229,11 +274,14 @@ func _physics_process(_delta : float):
 					var rotated_board_pos = camera_transform.basis * board_relative_pos
 					
 					# Spawn in front of the rotated board position (negative Z is forward)
-					var forward_offset = camera_transform.basis * Vector3(0, 0, -0.3)
+					var forward_offset = camera_transform.basis * Vector3(0, 0, -1.0)  # Move further out
 					var board_offset = rotated_board_pos + forward_offset
 					
 					# Position at character + rotated board offset + rotated pattern position
-					cell_3d.position = self.position + board_offset + rotated_position
+					var final_position = self.position + board_offset + rotated_position
+					cell_3d.position = final_position
+					
+					print("DEBUG: Spawning bullet at position: " + str(final_position) + " for player at: " + str(self.position))
 					
 					# Rotate the cell to match character's orientation
 					cell_3d.transform.basis = camera_transform.basis
@@ -242,6 +290,8 @@ func _physics_process(_delta : float):
 					var forward_force = 20.0  # Bullet speed
 					var forward_direction = -camera_transform.basis.z  # Forward is negative Z
 					cell_3d.linear_velocity = forward_direction * forward_force
+					
+					print("DEBUG: Bullet velocity: " + str(cell_3d.linear_velocity))
 					
 					# Add bullet cleanup timer to prevent infinite bullets
 					cell_3d.set_meta("spawn_time", Time.get_unix_time_from_system())
@@ -871,3 +921,103 @@ func clear_pattern_model():
 	# Show default model
 	if godot_plush_skin:
 		godot_plush_skin.visible = true
+
+# Health management functions
+func take_damage(damage: float, source_player_id: int = -1):	
+	if is_dead:
+		return  # Can't damage dead players
+	
+	current_health -= damage
+	current_health = max(0.0, current_health)  # Clamp to 0
+	
+	print("Player " + str(player_peer_id) + " health: " + str(int(current_health)) + "/" + str(int(max_health)))
+	
+	# Emit health changed signal
+	health_changed.emit(current_health, max_health)
+	
+	# Check if player died
+	if current_health <= 0.0 and not is_dead:
+		print("DEBUG: Player died!")
+		_handle_death(source_player_id)
+	
+	# Sync health across network for remote players
+	if multiplayer.is_server() and not is_remote:
+		_sync_health.rpc(current_health, is_dead)
+
+@rpc("any_peer", "call_local")
+func _sync_health(new_health: float, dead: bool):
+	current_health = new_health
+	is_dead = dead
+	health_changed.emit(current_health, max_health)
+
+func heal(amount: float):
+	if is_dead:
+		return  # Can't heal dead players
+	
+	current_health += amount
+	current_health = min(max_health, current_health)  # Clamp to max
+	
+	# Emit health changed signal
+	health_changed.emit(current_health, max_health)
+	
+	# Sync health across network
+	if multiplayer.is_server() and not is_remote:
+		_sync_health.rpc(current_health, is_dead)
+
+func _handle_death(killer_id: int = -1):
+	if is_dead:
+		return
+	
+	is_dead = true
+	death_time = Time.get_unix_time_from_system()
+	respawn_timer = respawn_delay
+	
+	# Force ragdoll on death
+	if godot_plush_skin:
+		godot_plush_skin.ragdoll = true
+	
+	# Transition to ragdoll state if not already there
+	if state_machine and state_machine.curr_state_name != "Ragdoll":
+		# Find the ragdoll state and trigger transition
+		var ragdoll_state = state_machine.states.get("ragdollstate")
+		if ragdoll_state:
+			state_machine.on_state_child_transition(state_machine.curr_state, "ragdollstate")
+	
+	# Emit death signal
+	player_died.emit(self)
+	
+	print("Player " + str(player_peer_id) + " died" + ((" (killed by " + str(killer_id) + ")") if killer_id != -1 else ""))
+
+func _handle_respawn():
+	if not is_dead:
+		return
+	
+	# Reset health
+	current_health = max_health
+	is_dead = false
+	respawn_timer = 0.0
+	
+	# Exit ragdoll state
+	if godot_plush_skin:
+		godot_plush_skin.ragdoll = false
+	
+	# Move to a safe respawn position (could be enhanced with spawn points)
+	_respawn_at_safe_location()
+	
+	# Reset velocity
+	velocity = Vector3.ZERO
+	
+	# Emit respawn signal
+	player_respawned.emit(self)
+	health_changed.emit(current_health, max_health)
+	
+	print("Player " + str(player_peer_id) + " respawned")
+
+func _respawn_at_safe_location():
+	# Simple respawn logic - move up and slightly randomize position
+	position.y += 5.0  # Move up to avoid being stuck in ground
+	position.x += randf_range(-2.0, 2.0)  # Small random offset
+	position.z += randf_range(-2.0, 2.0)
+
+func get_health_percentage() -> float:
+	return current_health / max_health if max_health > 0.0 else 0.0

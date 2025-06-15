@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var model_orientation_LT = %ModelOrientationLT
 @onready var camera_mode_LT = %CameraModeLT
 @onready var frames_per_second_LT = %FramesPerSecondLT
+# Removed health UI elements - now using dedicated HealthUI scene
 
 func display_curr_state(curr_state : String):
 	current_state_LT.set_text(str(curr_state))
@@ -38,7 +39,5 @@ func _process(_delta : float):
 	
 func display_frames_per_second():
 	frames_per_second_LT.set_text(str(Engine.get_frames_per_second()))
-	
-	
-	
-	
+
+# Health display functions removed - now handled by dedicated HealthUI scene

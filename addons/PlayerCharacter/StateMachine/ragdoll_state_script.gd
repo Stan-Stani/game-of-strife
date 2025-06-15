@@ -47,6 +47,10 @@ func applies():
 	cR.velocity.z = 0.0
 	
 func input_management():
+	# Don't allow exiting ragdoll if player is dead
+	if cR.is_dead:
+		return
+	
 	if cR.get_input_just_pressed("ragdoll"):
 		#if ragdoll is set to be only enable on floor
 		if cR.ragdoll_on_floor_only and cR.is_on_floor():

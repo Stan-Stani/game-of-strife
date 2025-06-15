@@ -23,6 +23,8 @@ func _ready():
 	
 var peer = ENetMultiplayerPeer.new()
 var PORT = 3006
+var HealthUI = preload("res://HealthUI.tscn")
+var health_ui_instance = null
 func _process(_delta: float) -> void:
 	
 	if Input.is_action_just_pressed("be_server"):
@@ -124,6 +126,9 @@ func _configure_local_player():
 		
 		# Create pattern-based model for local player
 		call_deferred("_create_pattern_model_for_player", local_player)
+		
+		# Create health UI for local player
+		_create_health_ui()
 	else:
 		pass
 
@@ -137,6 +142,9 @@ func _on_connected_to_server():
 	
 	# Request all existing patterns from server
 	_request_all_patterns.rpc_id(1)
+	
+	# Create health UI for client
+	_create_health_ui()
 	
 	# Notify server list of successful connection
 	if peer.has_meta("connecting_ip") and server_ui_instance:
@@ -609,6 +617,7 @@ func _dev_start_server():
 	
 	_configure_local_player()
 	_store_local_player_pattern()
+	_create_health_ui()
 
 func _dev_start_client():
 	# Wait a moment for server to start up
@@ -657,6 +666,12 @@ func get_collision_layer_for_peer(peer_id: int) -> int:
 		next_layer_id += 1
 	
 	return peer_to_layer_map[peer_id]
+
+func _create_health_ui():
+	if health_ui_instance == null:
+		health_ui_instance = HealthUI.instantiate()
+		add_child(health_ui_instance)
+		print("Health UI created")
 
 
 # var has_loaded_cells = false
