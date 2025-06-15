@@ -42,14 +42,7 @@ func _process(_delta: float) -> void:
 		_store_local_player_pattern()
 		
 	if Input.is_action_just_pressed("be_client"):
-		var error = peer.create_client('127.0.0.1', PORT)
-		print(error_string(error))
-
-
-		multiplayer.multiplayer_peer = peer
-		DisplayServer.window_set_title("Client")
-		
-		multiplayer.connected_to_server.connect(_on_connected_to_server)
+		_scan_lan_for_games()
 
 var remote_player_dictionary: Dictionary = {}
 var player_patterns: Dictionary = {}
@@ -219,6 +212,168 @@ func get_player_pattern(peer_id: int) -> Dictionary:
 		pass
 		# Fallback to current GameState.colony if no stored pattern
 		return GameState.colony
+
+func _scan_lan_for_games():
+	print("Scanning LAN for active games...")
+	
+	# Scan a smaller, more targeted range to avoid resource exhaustion
+	var ips_to_scan = [
+		"127.0.0.1",      # Localhost
+		"192.168.1.1",    # Common router IPs
+		"192.168.0.1",
+		"192.168.1.100",  # Common static IPs
+		"192.168.0.100",
+		"10.0.0.1",
+		"10.0.0.100"
+	]
+	
+	# Add current network range IPs (more targeted approach)
+	var local_ip = _get_local_ip()
+	if local_ip != "":
+		print("Detected local IP: " + local_ip)
+		var ip_parts = local_ip.split(".")
+		if ip_parts.size() == 4:
+			var base_ip = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "."
+			# Scan a few IPs around the local machine
+			for i in range(1, 20):  # Just scan first 20 IPs in local range
+				ips_to_scan.append(base_ip + str(i))
+	else:
+		print("Could not detect local IP, using default ranges only")
+	
+	print("Scanning " + str(ips_to_scan.size()) + " IP addresses:")
+	for ip in ips_to_scan:
+		print("  " + ip + ":" + str(PORT))
+	
+	var found_servers = []
+	
+	# Scan each IP with proper error handling
+	for ip_address in ips_to_scan:
+		if ip_address == local_ip:  # Skip scanning our own IP
+			print("Skipping own IP: " + ip_address)
+			continue
+		
+		print("Testing: " + ip_address)
+		var is_server_active = await _test_server_at_ip(ip_address)
+		if is_server_active:
+			print("Found server at: " + ip_address)
+			found_servers.append(ip_address)
+			# Stop scanning after finding the first server for faster connection
+			print("Stopping scan - found active server")
+			break
+		else:
+			print("No server at: " + ip_address)
+		
+		# Small delay between scans to prevent resource exhaustion
+		await get_tree().create_timer(0.01).timeout
+	
+	# Display results
+	if found_servers.size() > 0:
+		print("Found " + str(found_servers.size()) + " active game(s):")
+		for i in range(found_servers.size()):
+			print("  [" + str(i + 1) + "] " + found_servers[i] + ":" + str(PORT))
+		
+		# For now, auto-connect to the first server found
+		print("Connecting to: " + found_servers[0])
+		_connect_to_server(found_servers[0])
+	else:
+		print("No active games found on LAN")
+		print("Connecting to localhost (127.0.0.1) as fallback...")
+		_connect_to_server("127.0.0.1")
+
+func _get_local_ip() -> String:
+	# Try to get the local IP address
+	var ip_addresses = IP.get_local_addresses()
+	print("Detected IP addresses: " + str(ip_addresses))
+	
+	# Prioritize 192.168.x.x range (most common home networks)
+	for ip in ip_addresses:
+		if ip.begins_with("192.168."):
+			print("Using 192.168.x IP: " + ip)
+			return ip
+	
+	# Then try 10.x.x.x range
+	for ip in ip_addresses:
+		if ip.begins_with("10."):
+			print("Using 10.x IP: " + ip)
+			return ip
+	
+	# Finally try 172.16-31.x.x range (but exclude WSL virtual networks)
+	for ip in ip_addresses:
+		if ip.begins_with("172."):
+			# Check if it's in the valid private range (172.16.0.0 to 172.31.255.255)
+			var parts = ip.split(".")
+			if parts.size() == 4:
+				var second_octet = int(parts[1])
+				if second_octet >= 16 and second_octet <= 31:
+					# Skip WSL ranges that are typically 172.30.x.x
+					if second_octet != 30:
+						print("Using 172.x IP: " + ip)
+						return ip
+	
+	print("No suitable LAN IP found")
+	return ""
+
+func _test_server_at_ip(ip_address: String) -> bool:
+	# Create a new peer for each test to avoid conflicts
+	var test_peer = ENetMultiplayerPeer.new()
+	
+	# Try to create client connection
+	var result = test_peer.create_client(ip_address, PORT)
+	if result != OK:
+		print("  Failed to create client for " + ip_address + ": " + error_string(result))
+		test_peer.close()
+		return false
+	
+	print("  Created client connection attempt to " + ip_address)
+	
+	# Use a longer timeout for more reliable detection
+	var timeout = 0.5  # 500ms timeout - much more generous
+	var start_time = Time.get_unix_time_from_system()
+	
+	# Simple polling loop with timeout
+	while Time.get_unix_time_from_system() - start_time < timeout:
+		# IMPORTANT: Poll the peer to process network events
+		test_peer.poll()
+		
+		var status = test_peer.get_connection_status()
+		var status_name = ""
+		match status:
+			MultiplayerPeer.CONNECTION_DISCONNECTED:
+				status_name = "DISCONNECTED"
+			MultiplayerPeer.CONNECTION_CONNECTING:
+				status_name = "CONNECTING"
+			MultiplayerPeer.CONNECTION_CONNECTED:
+				status_name = "CONNECTED"
+			_:
+				status_name = "UNKNOWN"
+		
+		print("  Status for " + ip_address + ": " + str(status) + " (" + status_name + ")")
+		
+		if status == MultiplayerPeer.CONNECTION_CONNECTED:
+			print("  SUCCESS: Connected to " + ip_address)
+			test_peer.close()
+			return true
+		elif status == MultiplayerPeer.CONNECTION_DISCONNECTED:
+			print("  FAILED: Disconnected from " + ip_address)
+			test_peer.close()
+			return false
+		
+		# Very short frame wait
+		await get_tree().process_frame
+	
+	# Cleanup and return false for timeout
+	print("  TIMEOUT: No response from " + ip_address + " after " + str(timeout) + "s")
+	test_peer.close()
+	return false
+
+func _connect_to_server(ip_address: String):
+	var error = peer.create_client(ip_address, PORT)
+	print("Connecting to " + ip_address + ": " + error_string(error))
+	
+	multiplayer.multiplayer_peer = peer
+	DisplayServer.window_set_title("Client")
+	
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
 
 func _check_dev_auto_connect():
 	# Check for development auto-connect based on command line arguments or debug mode
