@@ -123,10 +123,6 @@ func _ready():
 	if !is_remote:
 		_make_player_translucent()
 	
-	# Debug: Log CharacterBody3D collision settings
-	print("DEBUG: CharacterBody3D collision for peer " + str(player_peer_id) + ":")
-	print("  - Character collision_layer: " + str(collision_layer))
-	print("  - Character collision_mask: " + str(collision_mask))
 	
 	#set char model audios effects
 	godot_plush_skin.footstep.connect(func(intensity : float = 1.0):
@@ -173,28 +169,23 @@ func _physics_process(_delta : float):
 			var collider = collision.get_collider()
 			if collider:
 				if collider.get_class() == "CharacterBody3D":
-					print("DEBUG: Player " + str(player_peer_id) + " collided with PLAYER:")
-					print("  - Collided with: " + str(collider.name) + " (type: " + str(collider.get_class()) + ")")
-					if collider.has_method("get_collision_layer"):
-						print("    Collider layer: " + str(collider.get_collision_layer()))
+					pass
 				elif collider.get_class() == "StaticBody3D":
 					var collider_layer = collider.collision_layer
 					# Check if it's a pattern box (layers 5-9 = values 32, 64, 128, 256, 512)
 					if collider_layer >= 32 and collider_layer <= 512:
-						print("PATTERN COLLISION: Player " + str(player_peer_id) + " hit pattern box on layer " + str(collider_layer))
+						pass
 	
 	# Handle shooting with cooldown and just_pressed requirement
 	if get_input_just_pressed(shootAction):
 		var current_timestamp = Time.get_unix_time_from_system()
 		
 		if current_timestamp - last_shoot_time >= shoot_cooldown_time:
-			print("bang")
 			last_shoot_time = current_timestamp
 			var camera_transform = get_camera_transform()
 			
 			# Get the pattern for this specific player character (based on which peer they represent)
 			var pattern_to_shoot = Game3D.get_player_pattern(player_peer_id)
-			print("Player character representing peer " + str(player_peer_id) + " (remote: " + str(is_remote) + ") shooting pattern with " + str(pattern_to_shoot.size()) + " cells")
 			
 			for cellPos in pattern_to_shoot:
 				if pattern_to_shoot[cellPos] == true:
@@ -218,12 +209,10 @@ func _physics_process(_delta : float):
 					var local_position = Vector3(cellPos.x * 0.25, -cellPos.y * 0.25, 0)
 					
 					# Use camera transform for rotation since character body doesn't rotate
-					print("Camera forward: ", camera_transform.basis.z)
 					
 					# Transform the local position using camera's basis (which represents rotation)
 					var rotated_position = camera_transform.basis * local_position
 					
-					print("Local: ", local_position, " -> Rotated: ", rotated_position)
 					
 					# Board offset should be relative to the rotated board position
 					# The board is at (0, 1.25, 0.11) relative to character, but rotated
@@ -380,10 +369,8 @@ func create_pattern_model():
 	
 	# Get the pattern for this player
 	var pattern = Game3D.get_player_pattern(player_peer_id)
-	print("Creating pattern model for peer " + str(player_peer_id) + " with " + str(pattern.size()) + " cells")
 	
 	if pattern.is_empty():
-		print("No pattern available, keeping default model")
 		return
 	
 	# Hide the default model
@@ -447,13 +434,11 @@ func _create_pattern_monolith(pattern: Dictionary):
 	monolith.material_override = material
 	monolith.position = Vector3(0, 0.0, 0)  # Put monolith center at player center
 	
-	print("DEBUG: Monolith - height: " + str(box_mesh.size.y) + ", position: " + str(monolith.position) + ", bottom should be at: " + str(monolith.position.y - box_mesh.size.y/2))
 	
 	pattern_container.add_child(monolith)
 	pattern_model_cells.append(monolith)
 	
 	# Keep collision capsule as default (no custom collision box needed)
-	print("DEBUG: Created monolith for player " + str(player_peer_id))
 
 func _create_pattern_cells(pattern: Dictionary):
 	# Create a simple box for the character body
@@ -499,14 +484,11 @@ func _create_pattern_cells(pattern: Dictionary):
 	pattern_container.add_child(back_sprite)
 	pattern_model_cells.append(back_sprite)
 	
-	print("DEBUG: Created box character with front and back sprite patterns for player " + str(player_peer_id))
 
 func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 	if pattern.is_empty():
-		print("DEBUG: Pattern is empty, skipping texture creation")
 		return
 	
-	print("DEBUG: Creating pattern texture with " + str(pattern.size()) + " cells")
 	
 	# Find pattern bounds
 	var min_x = INF
@@ -522,10 +504,8 @@ func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 			max_y = max(max_y, pos.y)
 	
 	if min_x == INF:
-		print("DEBUG: No active cells found in pattern")
 		return
 	
-	print("DEBUG: Pattern bounds - X: " + str(min_x) + " to " + str(max_x) + ", Y: " + str(min_y) + " to " + str(max_y))
 	
 	# Create texture size (make it a power of 2 for better compatibility)
 	var pattern_width = int(max_x - min_x + 1)
@@ -536,7 +516,6 @@ func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 	var image = Image.create(texture_size, texture_size, false, Image.FORMAT_RGB8)
 	image.fill(Color(0.2, 0.2, 0.2))  # Dark background (no alpha)
 	
-	print("DEBUG: Created " + str(texture_size) + "x" + str(texture_size) + " image")
 	
 	# Draw pattern cells as bright pixels
 	var cells_drawn = 0
@@ -561,7 +540,6 @@ func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 					image.set_pixel(px, py, Color(0.431797, 0.783099, 0.415405))
 			cells_drawn += 1
 	
-	print("DEBUG: Drew " + str(cells_drawn) + " pattern cells on texture")
 	
 	# Create texture and apply to material
 	var texture = ImageTexture.new()
@@ -569,7 +547,6 @@ func _create_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 	material.albedo_texture = texture
 	material.uv1_scale = Vector3(2, 2, 1)  # Scale UV to show pattern clearly
 	
-	print("DEBUG: Applied texture to material")
 
 func _create_board_pattern_texture(material: StandardMaterial3D, pattern: Dictionary):
 	# Create a 10x10 texture for the board with live cells marked
@@ -615,7 +592,6 @@ func _create_board_pattern_texture(material: StandardMaterial3D, pattern: Dictio
 	# Set UV scale to prevent texture wrapping/stretching
 	material.uv1_scale = Vector3(1, 1, 1)
 	
-	print("DEBUG: Created board pattern texture with " + str(pattern.size()) + " live cells")
 
 func _create_board_sprite_texture(pattern: Dictionary) -> ImageTexture:
 	# Create a 32x32 texture for the sprite
@@ -653,7 +629,6 @@ func _create_board_sprite_texture(pattern: Dictionary) -> ImageTexture:
 	var texture = ImageTexture.new()
 	texture.set_image(image)
 	
-	print("DEBUG: Created sprite texture with " + str(pattern.size()) + " live cells")
 	return texture
 
 func _create_pattern_collision_box(min_pos: Vector2, max_pos: Vector2, pattern_center_x: float, pattern_bottom_y: float, scale_factor: float, pattern: Dictionary):
@@ -679,11 +654,6 @@ func _create_pattern_collision_box(min_pos: Vector2, max_pos: Vector2, pattern_c
 		
 		collision_shape_3d.position = Vector3(0, collision_center_y, 0)
 		
-		print("DEBUG: Created collision box for player " + str(player_peer_id))
-		print("  - Box size: " + str(box_shape.size))
-		print("  - Box position: " + str(collision_shape_3d.position))
-		print("  - Pattern height: " + str(pattern_height) + ", scale: " + str(scale_factor))
-		print("  - Bottom Y: " + str(pattern_bottom_world_y) + ", Top Y: " + str(pattern_top_world_y) + ", Center Y: " + str(collision_center_y))
 	
 	# Create collision visualization showing only empty spaces
 	_create_collision_negative_space(min_pos, max_pos, pattern, pattern_center_x, pattern_bottom_y, scale_factor, Vector3(0, collision_center_y, 0))
@@ -730,7 +700,6 @@ func _create_visual_collision_box(width: float, height: float, depth: float, pos
 	
 	pattern_container.add_child(pattern_collision_box)
 	
-	print("DEBUG: Created visual collision edges at " + str(pos) + " with size " + str(Vector3(width, height, depth)))
 
 func _create_collision_corners(width: float, height: float, depth: float, pos: Vector3):
 	# Create small corner indicators that show collision bounds without z-fighting
@@ -765,7 +734,6 @@ func _create_collision_corners(width: float, height: float, depth: float, pos: V
 		pattern_collision_box.add_child(corner)
 	
 	pattern_container.add_child(pattern_collision_box)
-	print("DEBUG: Created collision corner indicators at " + str(pos))
 
 func _create_collision_negative_space(min_pos: Vector2, max_pos: Vector2, pattern: Dictionary, pattern_center_x: float, pattern_bottom_y: float, scale_factor: float, collision_pos: Vector3):
 	# Create collision visualization that fills empty spaces in the bounding box
@@ -801,7 +769,6 @@ func _create_collision_negative_space(min_pos: Vector2, max_pos: Vector2, patter
 				pattern_collision_box.add_child(empty_cell)
 	
 	pattern_container.add_child(pattern_collision_box)
-	print("DEBUG: Created collision negative space visualization")
 
 func _sync_pattern_rotation():
 	# Sync the actual collision shape (physics) with camera rotation
@@ -825,12 +792,10 @@ func _make_player_translucent():
 		_make_node_translucent(pattern_container, 0.3)
 
 func _make_node_translucent(node: Node, alpha: float):
-	print("DEBUG: Checking node: " + str(node.name) + " (type: " + str(node.get_class()) + ")")
 	
 	# Handle MeshInstance3D with dual mesh approach for shadows + transparency
 	if node is MeshInstance3D:
 		var mesh_instance = node as MeshInstance3D
-		print("DEBUG: Creating dual mesh for " + str(mesh_instance.name))
 		
 		# Create shadow-only duplicate
 		var shadow_mesh = mesh_instance.duplicate()
@@ -863,13 +828,11 @@ func _make_node_translucent(node: Node, alpha: float):
 		
 		# Add shadow mesh as sibling
 		mesh_instance.get_parent().add_child(shadow_mesh)
-		print("DEBUG: Created shadow+transparent dual mesh for " + str(mesh_instance.name))
 	
 	# Handle Sprite3D with modulation  
 	elif node is Sprite3D:
 		var sprite = node as Sprite3D
 		sprite.modulate.a = alpha
-		print("DEBUG: Set Sprite3D modulate alpha to " + str(alpha) + " for " + str(sprite.name))
 	
 	# Check children
 	for child in node.get_children():

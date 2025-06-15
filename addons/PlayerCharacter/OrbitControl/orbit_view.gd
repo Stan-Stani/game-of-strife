@@ -35,11 +35,6 @@ func _ready():
 	Input.set_use_accumulated_input(false)
 	set_active(active)
 	
-	# Debug info
-	print("SpringArm3D initialized:")
-	print("  collision_mask: ", collision_mask)
-	print("  spring_length: ", spring_length)
-	print("  shape: ", shape)
 	
 func set_active(state : bool):
 	#enable/disable play char camera
@@ -85,9 +80,6 @@ func _process(delta):
 	# Debug logging for collision detection
 	var actual_length = get_hit_length()
 	var collision_detected = actual_length < spring_length
-	if collision_detected:
-		print("SpringArm collision detected! Hit length: ", actual_length, " Spring length: ", spring_length)
-		print("Collision mask: ", collision_mask, " Position: ", global_position)
 	
 	#position the cam according to her mode (default, aim (with left or right side))
 	# Use actual spring arm length after collision detection instead of zoom_val

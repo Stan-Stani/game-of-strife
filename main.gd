@@ -145,10 +145,8 @@ func get_pos_in_grid_units(pos: Vector2) -> GridPos:
 func start_stop():
 	if $Timer.is_stopped() && visualCells.size() > 0:
 		$Timer.start()
-		print('start timer')
 	else:
 		$Timer.stop()
-		print('stop timer')
 	
 func reset():
 	$Timer.stop()
@@ -156,13 +154,11 @@ func reset():
 		visualCells[key].queue_free()
 		grids.future.clear()
 		visualCells.clear()
-		print('reset stage')
 
 func mouse_pos_to_cam_pos(pos):
 	return (pos - get_viewport_rect().size / 2) / $Camera2D.zoom + $Camera2D.offset
 
 func _on_timer_timeout():
-	print("tick")
 
 
 

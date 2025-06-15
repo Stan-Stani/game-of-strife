@@ -18,7 +18,7 @@ func _ready():
 	# Don't spawn local player here - wait for multiplayer connection
 	
 	# Auto-connect for development
-	_check_dev_auto_connect()
+	# _check_dev_auto_connect()
 	
 	
 var peer = ENetMultiplayerPeer.new()
@@ -70,7 +70,6 @@ func _add_remote_player_character(new_peer_id: int):
 	
 	# Create pattern-based model for remote player (deferred to allow pattern sync)
 	call_deferred("_create_pattern_model_for_player", new_player_character)
-	print("Added remote player for peer: " + str(new_peer_id) + " at position: " + str(new_player_character.position))
 	
 	# Request initial position after a brief delay to ensure everything is set up
 	call_deferred("_request_position_for_peer", new_peer_id)
@@ -81,7 +80,7 @@ func receive_player_input(peer_id: int, input_data: Dictionary):
 		var player = remote_player_dictionary[peer_id]
 		player.apply_remote_input(input_data)
 	else:
-		print("No remote player found for peer " + str(peer_id))
+		pass
 
 func _on_peer_connected(peer_id: int):
 	print("Player connected: " + str(peer_id))
@@ -115,7 +114,6 @@ var local_player_ref: CharacterBody3D
 
 func _configure_local_player():
 	var local_player = get_node("Player")
-	print("Looking for Player node, found: " + str(local_player))
 	if local_player:
 		local_player.is_remote = false
 		local_player.player_peer_id = multiplayer.get_unique_id()
@@ -129,12 +127,8 @@ func _configure_local_player():
 		
 		# Create pattern-based model for local player
 		call_deferred("_create_pattern_model_for_player", local_player)
-		print("Configured local player with authority: " + str(multiplayer.get_unique_id()))
-		print("Local player name: " + local_player.name)
-		print("Local player position: " + str(local_player.position))
-		print("Stored local_player_ref: " + str(local_player_ref))
 	else:
-		print("Failed to find Player node")
+		pass
 
 func _on_connected_to_server():
 	print("Connected to server")
@@ -149,7 +143,6 @@ func _on_connected_to_server():
 
 @rpc("any_peer", "call_remote")
 func _request_initial_position():
-	print("Received position request from peer: " + str(multiplayer.get_remote_sender_id()))
 	# Send our current position to whoever requested it
 	if local_player_ref:
 		var initial_data = {
@@ -157,25 +150,21 @@ func _request_initial_position():
 			"velocity": local_player_ref.velocity,
 			"rotation": local_player_ref.rotation
 		}
-		print("Sending position " + str(local_player_ref.position) + " to peer " + str(multiplayer.get_remote_sender_id()))
 		_sync_initial_position.rpc_id(multiplayer.get_remote_sender_id(), multiplayer.get_unique_id(), initial_data)
 	else:
-		print("Could not find local player reference to send position")
+		pass
 
 @rpc("any_peer", "call_remote")
 func _sync_initial_position(peer_id: int, position_data: Dictionary):
-	print("Attempting to sync position for peer " + str(peer_id) + " to " + str(position_data.get("position")))
 	if remote_player_dictionary.has(peer_id):
 		var remote_player = remote_player_dictionary[peer_id]
 		remote_player.position = position_data.get("position", Vector3.ZERO)
 		remote_player.velocity = position_data.get("velocity", Vector3.ZERO)
 		remote_player.rotation = position_data.get("rotation", Vector3.ZERO)
-		print("Successfully synced initial position for peer " + str(peer_id) + ": " + str(position_data.get("position")))
 	else:
-		print("Could not find remote player for peer " + str(peer_id))
+		pass
 
 func _request_position_for_peer(peer_id: int):
-	print("Requesting position for peer: " + str(peer_id))
 	_request_initial_position.rpc_id(peer_id)
 
 func _store_local_player_pattern():
@@ -183,7 +172,6 @@ func _store_local_player_pattern():
 	# Use the pattern that was stored on load
 	var pattern_to_store = player_patterns.get("local_pattern", GameState.colony.duplicate())
 	player_patterns[local_peer_id] = pattern_to_store
-	print("Stored pattern for local player " + str(local_peer_id) + " with " + str(pattern_to_store.size()) + " cells")
 	
 	# Clean up the temporary pattern
 	if player_patterns.has("local_pattern"):
@@ -222,16 +210,13 @@ func _store_pattern_on_load():
 	# Store the current pattern in a temporary key to preserve it before multiplayer
 	var temp_key = "local_pattern"
 	player_patterns[temp_key] = GameState.colony.duplicate()
-	print("Stored initial pattern on load with " + str(GameState.colony.size()) + " cells under temp key")
 
 func get_player_pattern(peer_id: int) -> Dictionary:
-	print("Getting pattern for peer " + str(peer_id) + ". Available patterns: " + str(player_patterns.keys()))
 
 	if player_patterns.has(peer_id):
-		print("Found stored pattern for peer " + str(peer_id) + " with " + str(player_patterns[peer_id].size()) + " cells")
 		return player_patterns[peer_id]
 	else:
-		print("No stored pattern for peer " + str(peer_id) + ", using GameState.colony with " + str(GameState.colony.size()) + " cells")
+		pass
 		# Fallback to current GameState.colony if no stored pattern
 		return GameState.colony
 
@@ -253,7 +238,6 @@ func _check_dev_auto_connect():
 		call_deferred("_dev_start_client")
 
 func _test_server_connection():
-	print("Development mode: Testing for existing server...")
 	
 	# Create a test multiplayer peer to check connection
 	var test_peer = ENetMultiplayerPeer.new()
@@ -262,7 +246,6 @@ func _test_server_connection():
 	# Try to connect
 	var result = test_peer.create_client('127.0.0.1', PORT)
 	if result != OK:
-		print("Development mode: Could not create test client, becoming server")
 		_dev_start_server()
 		return
 	
@@ -276,12 +259,10 @@ func _test_server_connection():
 		test_multiplayer.poll()
 		
 		if test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
-			print("Development mode: Found existing server, auto-connecting as client")
 			test_peer.close()
 			_dev_start_client()
 			return
 		elif test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
-			print("Development mode: Connection failed, becoming server")
 			test_peer.close()
 			_dev_start_server()
 			return
@@ -289,7 +270,6 @@ func _test_server_connection():
 		await get_tree().process_frame
 	
 	# Timeout reached
-	print("Development mode: Connection test timed out, becoming server")
 	test_peer.close()
 	_dev_start_server()
 
@@ -320,10 +300,9 @@ func _dev_start_client():
 
 func _create_pattern_model_for_player(player_character):
 	if player_character and player_character.has_method("create_pattern_model"):
-		print("Creating pattern model for player: " + player_character.name)
-		player_character.create_pattern_model()
+			player_character.create_pattern_model()
 	else:
-		print("Player character does not have create_pattern_model method")
+		pass
 
 func _update_player_pattern_model(peer_id: int):
 	# Find the player character for this peer and update their model
@@ -337,10 +316,9 @@ func _update_player_pattern_model(peer_id: int):
 		player_character = remote_player_dictionary[peer_id]
 	
 	if player_character:
-		print("Updating pattern model for peer " + str(peer_id))
 		_create_pattern_model_for_player(player_character)
 	else:
-		print("No player character found for peer " + str(peer_id))
+		pass
 
 # Collision layer mapping for peer IDs
 var peer_to_layer_map = {}
@@ -350,11 +328,9 @@ func get_collision_layer_for_peer(peer_id: int) -> int:
 	# Map peer IDs to collision layers 1-4 (supports up to 4 players)
 	if not peer_to_layer_map.has(peer_id):
 		if next_layer_id > 4:
-			print("WARNING: Too many players! Using layer 4 for peer " + str(peer_id))
 			return 4
 		peer_to_layer_map[peer_id] = next_layer_id
 		next_layer_id += 1
-		print("DEBUG: Mapped peer " + str(peer_id) + " to collision layer " + str(peer_to_layer_map[peer_id]))
 	
 	return peer_to_layer_map[peer_id]
 

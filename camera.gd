@@ -31,7 +31,6 @@ func _input(event):
 	# Receives mouse motion
 	if event is InputEventMouseMotion:
 		_mouse_position = event.relative
-		print(event.relative)
 	
 	# Receives mouse button input
 	if event is InputEventMouseButton:
