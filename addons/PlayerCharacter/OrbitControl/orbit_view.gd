@@ -35,6 +35,12 @@ func _ready():
 	Input.set_use_accumulated_input(false)
 	set_active(active)
 	
+	# Debug info
+	print("SpringArm3D initialized:")
+	print("  collision_mask: ", collision_mask)
+	print("  spring_length: ", spring_length)
+	print("  shape: ", shape)
+	
 func set_active(state : bool):
 	#enable/disable play char camera
 	active = state
@@ -70,15 +76,27 @@ func _process(delta):
 	#get pan direction
 	var joy_dir = Input.get_vector("pan_left", "pan_right", "pan_up", "pan_down")
 	
+	#handle zoom first to update spring_length
+	zoom_handling(delta)
+	
+	#update spring arm length to match zoom for proper collision detection
+	spring_length = zoom_val
+	
+	# Debug logging for collision detection
+	var actual_length = get_hit_length()
+	var collision_detected = actual_length < spring_length
+	if collision_detected:
+		print("SpringArm collision detected! Hit length: ", actual_length, " Spring length: ", spring_length)
+		print("Collision mask: ", collision_mask, " Position: ", global_position)
+	
 	#position the cam according to her mode (default, aim (with left or right side))
-	if !cam_aimed: cam.position = Vector3(0.0, 0.0, zoom_val)
-	else: cam.position = Vector3(aim_cam_pos.x if aim_cam_pos_side else -aim_cam_pos.x, aim_cam_pos.y, zoom_val)
+	# Use actual spring arm length after collision detection instead of zoom_val
+	var effective_distance = actual_length
+	if !cam_aimed: cam.position = Vector3(0.0, 0.0, effective_distance)
+	else: cam.position = Vector3(aim_cam_pos.x if aim_cam_pos_side else -aim_cam_pos.x, aim_cam_pos.y, effective_distance)
 	
 	#rotate cam
 	rotate_from_vector(joy_dir * Vector2(1.0, 0.5) * pan_rotation_val * delta)
-	
-	#handle zoom
-	zoom_handling(delta)
 	
 func rotate_from_vector(vector : Vector2):
 	#rotate cam by the vector's amount, and clamp the rotation between max up and max down values
