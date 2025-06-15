@@ -137,6 +137,24 @@ func _on_connected_to_server():
 	
 	# Request all existing patterns from server
 	_request_all_patterns.rpc_id(1)
+	
+	# Notify server list of successful connection
+	if peer.has_meta("connecting_ip") and server_ui_instance:
+		server_ui_instance.server_connection_succeeded(peer.get_meta("connecting_ip"))
+
+func _on_connection_failed():
+	print("Connection to server failed")
+	
+	# Notify server list of failed connection
+	if peer.has_meta("connecting_ip") and server_ui_instance:
+		server_ui_instance.server_connection_failed(peer.get_meta("connecting_ip"))
+		
+	# Clean up
+	peer.close()
+
+func _on_server_disconnected():
+	print("Disconnected from server")
+	# Could add logic here to mark server as unreliable
 
 @rpc("any_peer", "call_remote")
 func _request_initial_position():
@@ -519,7 +537,12 @@ func _connect_to_server(ip_address: String):
 	multiplayer.multiplayer_peer = peer
 	DisplayServer.window_set_title("Client")
 	
+	# Store IP for success/failure callbacks
+	peer.set_meta("connecting_ip", ip_address)
+	
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
+	multiplayer.connection_failed.connect(_on_connection_failed)
+	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
 func _check_dev_auto_connect():
 	# Check for development auto-connect based on command line arguments or debug mode
