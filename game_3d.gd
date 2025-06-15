@@ -42,10 +42,14 @@ func _process(_delta: float) -> void:
 		_store_local_player_pattern()
 		
 	if Input.is_action_just_pressed("be_client"):
-		_scan_lan_for_games()
+		_show_server_selection_ui()
 
 var remote_player_dictionary: Dictionary = {}
 var player_patterns: Dictionary = {}
+
+# UI Management
+var ServerSelectionUI = preload("res://ServerSelectionUI.tscn")
+var server_ui_instance = null
 
 @rpc("call_local")
 func _add_remote_player_character(new_peer_id: int):
@@ -213,6 +217,139 @@ func get_player_pattern(peer_id: int) -> Dictionary:
 		# Fallback to current GameState.colony if no stored pattern
 		return GameState.colony
 
+func _show_server_selection_ui():
+	# Release mouse cursor for UI interaction
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	
+	# Create and show the server selection UI
+	if server_ui_instance == null:
+		server_ui_instance = ServerSelectionUI.instantiate()
+		add_child(server_ui_instance)
+		
+		# Connect UI signals
+		server_ui_instance.server_selected.connect(_on_server_selected)
+		server_ui_instance.cancelled.connect(_on_server_ui_cancelled)
+		server_ui_instance.refresh_requested.connect(_on_refresh_requested)
+	
+	# Show scanning indicator and start scan
+	server_ui_instance.start_scanning()
+	_scan_lan_for_games_ui()
+
+func _on_server_selected(ip_address: String):
+	print("User selected server: " + ip_address)
+	_connect_to_server(ip_address)
+	_hide_server_selection_ui()
+
+func _on_server_ui_cancelled():
+	print("Server selection cancelled")
+	_hide_server_selection_ui()
+
+func _on_refresh_requested():
+	print("Refreshing server list...")
+	server_ui_instance.start_scanning()
+	_scan_lan_for_games_ui()
+
+func _hide_server_selection_ui():
+	# Restore mouse capture for camera control
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	
+	if server_ui_instance != null:
+		server_ui_instance.queue_free()
+		server_ui_instance = null
+
+func _scan_lan_for_games_ui():
+	# Modified version that updates UI instead of auto-connecting
+	print("Scanning LAN for active games...")
+	
+	# Scan a smaller, more targeted range to avoid resource exhaustion
+	var ips_to_scan = [
+		"127.0.0.1",      # Localhost
+		"192.168.1.1",    # Common router IPs
+		"192.168.0.1",
+		"192.168.1.100",  # Common static IPs
+		"192.168.0.100",
+		"10.0.0.1",
+		"10.0.0.100"
+	]
+	
+	# Add current network range IPs 
+	var local_ip = _get_local_ip()
+	if local_ip != "":
+		print("Detected local IP: " + local_ip)
+		var ip_parts = local_ip.split(".")
+		if ip_parts.size() == 4:
+			var base_ip = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "."
+			
+			# Choose scanning approach based on preference
+			var full_network_scan = false  # Set to true for complete network scan
+			
+			if full_network_scan:
+				print("Performing full network scan (1-254)")
+				# Scan entire subnet (warning: slower but comprehensive)
+				for i in range(1, 255):
+					ips_to_scan.append(base_ip + str(i))
+			else:
+				print("Performing targeted scan (1-50)")
+				# Targeted scan - first 50 IPs (good compromise)
+				for i in range(1, 51):
+					ips_to_scan.append(base_ip + str(i))
+	else:
+		print("Could not detect local IP, using default ranges only")
+	
+	print("Scanning " + str(ips_to_scan.size()) + " IP addresses:")
+	for ip in ips_to_scan:
+		print("  " + ip + ":" + str(PORT))
+	
+	var found_servers = []
+	
+	# Scan each IP with proper error handling - show servers as they're found
+	for ip_address in ips_to_scan:
+		# Check for cancellation before each IP test
+		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+			print("Scan cancelled by user")
+			break
+		
+		if ip_address == local_ip:  # Skip scanning our own IP
+			print("Skipping own IP: " + ip_address)
+			if server_ui_instance != null:
+				server_ui_instance.update_scanning_status(ip_address, "SKIPPED")
+				server_ui_instance.log_scan_attempt(ip_address, "SKIPPED (own IP)")
+			continue
+		
+		print("Testing: " + ip_address)
+		if server_ui_instance != null:
+			server_ui_instance.update_scanning_status(ip_address, "TESTING")
+			server_ui_instance.log_scan_attempt(ip_address, "TESTING...")
+		
+		var is_server_active = await _test_server_at_ip(ip_address)
+		
+		# Check for cancellation after each test (in case user cancelled during the test)
+		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+			print("Scan cancelled by user")
+			break
+		
+		if is_server_active:
+			print("Found server at: " + ip_address)
+			found_servers.append(ip_address)
+			
+			# Update status and log with success result
+			if server_ui_instance != null:
+				server_ui_instance.update_scanning_status(ip_address, "SUCCESS")
+				server_ui_instance.update_last_log_entry(ip_address, "SUCCESS - Server found!")
+				server_ui_instance.add_server_to_list(ip_address)
+		else:
+			print("No server at: " + ip_address)
+			if server_ui_instance != null:
+				server_ui_instance.update_scanning_status(ip_address, "FAILED")
+				server_ui_instance.update_last_log_entry(ip_address, "FAILED - No server")
+		
+		# Small delay between scans to prevent resource exhaustion
+		await get_tree().create_timer(0.01).timeout
+	
+	# Finish scanning
+	if server_ui_instance != null:
+		server_ui_instance.finish_scanning()
+
 func _scan_lan_for_games():
 	print("Scanning LAN for active games...")
 	
@@ -330,8 +467,14 @@ func _test_server_at_ip(ip_address: String) -> bool:
 	var timeout = 0.5  # 500ms timeout - much more generous
 	var start_time = Time.get_unix_time_from_system()
 	
-	# Simple polling loop with timeout
+	# Simple polling loop with timeout AND cancellation check
 	while Time.get_unix_time_from_system() - start_time < timeout:
+		# Check for cancellation during the connection test
+		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
+			print("  CANCELLED: Connection test cancelled for " + ip_address)
+			test_peer.close()
+			return false
+		
 		# IMPORTANT: Poll the peer to process network events
 		test_peer.poll()
 		
