@@ -192,6 +192,15 @@ func _physics_process(_delta : float):
 					var cell_3d: RigidBody3D = Cell3D.instantiate()
 					Game3D.add_child(cell_3d)
 					
+					# Configure bullet physics for better collision detection
+					cell_3d.continuous_cd = true  # Enable continuous collision detection
+					cell_3d.contact_monitor = true  # Enable contact monitoring
+					cell_3d.max_contacts_reported = 10  # Allow multiple contact reports
+					
+					# Set collision layers: bullets on layer 8, collide with players (layer 3) and environment (layers 1,2)
+					cell_3d.collision_layer = 256  # Layer 8 (2^8 = 256) - bullets
+					cell_3d.collision_mask = 1 + 2 + 4 + 256  # Layers 1,2,3,8 (environment + players + bullets)
+					
 					# Store reference to owner player for collision checking
 					cell_3d.set_meta("owner_peer_id", player_peer_id)
 					cell_3d.set_meta("owner_player", self)
@@ -233,6 +242,10 @@ func _physics_process(_delta : float):
 					var forward_force = 20.0  # Bullet speed
 					var forward_direction = -camera_transform.basis.z  # Forward is negative Z
 					cell_3d.linear_velocity = forward_direction * forward_force
+					
+					# Add bullet cleanup timer to prevent infinite bullets
+					cell_3d.set_meta("spawn_time", Time.get_unix_time_from_system())
+					cell_3d.set_meta("lifetime", 5.0)  # Bullets last 5 seconds
 
 	
 func display_properties():
