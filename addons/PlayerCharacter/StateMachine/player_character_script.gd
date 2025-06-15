@@ -251,6 +251,9 @@ func _physics_process(delta : float):
 					cell_3d.set_meta("owner_player", self)
 					cell_3d.set_meta("min_separation_distance", 2.0)  # Must be this far from owner to collide
 					
+					# Prevent bullets from the same player from colliding with each other
+					_prevent_bullet_self_collision(cell_3d, player_peer_id)
+					
 					# Scale the mesh and collision shape to match board cell size (0.25 units)
 					var mesh_node = cell_3d.get_node("Mesh")
 					var collision_node = cell_3d.get_node("CollisionShape3D")
@@ -1021,3 +1024,22 @@ func _respawn_at_safe_location():
 
 func get_health_percentage() -> float:
 	return current_health / max_health if max_health > 0.0 else 0.0
+
+func _prevent_bullet_self_collision(new_bullet: RigidBody3D, owner_id: int):
+	# Find all existing bullets from the same player and prevent collision between them
+	var game_3d = Game3D
+	if not game_3d:
+		return
+	
+	var bullets_found = 0
+	for child in game_3d.get_children():
+		if child is RigidBody3D and child != new_bullet:
+			# Check if this is a bullet from the same player
+			if child.has_meta("owner_peer_id") and child.get_meta("owner_peer_id") == owner_id:
+				# Add collision exception between the new bullet and existing bullet
+				new_bullet.add_collision_exception_with(child)
+				child.add_collision_exception_with(new_bullet)
+				bullets_found += 1
+	
+	if bullets_found > 0:
+		print("DEBUG: Added collision exceptions between new bullet and " + str(bullets_found) + " existing bullets from player " + str(owner_id))
