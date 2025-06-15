@@ -119,6 +119,10 @@ func _ready():
 	
 	# No need for special collision layers - bullets handle collision exceptions
 	
+	# Make local player translucent to themselves
+	if !is_remote:
+		_make_player_translucent()
+	
 	# Debug: Log CharacterBody3D collision settings
 	print("DEBUG: CharacterBody3D collision for peer " + str(player_peer_id) + ":")
 	print("  - Character collision_layer: " + str(collision_layer))
@@ -393,6 +397,10 @@ func create_pattern_model():
 	
 	# Create individual cells based on pattern
 	_create_pattern_cells(pattern)
+	
+	# Make pattern model translucent for local player
+	if !is_remote:
+		_make_node_translucent(pattern_container, 0.3)
 	
 	# Set collision to match the board shape
 	if collision_shape_3d:
@@ -806,6 +814,66 @@ func _sync_pattern_rotation():
 		# Restore position (rotation might have changed it)
 		collision_shape_3d.position = original_pos
 
+
+func _make_player_translucent():
+	# Make the default model translucent
+	if godot_plush_skin:
+		_make_node_translucent(godot_plush_skin, 0.3)
+	
+	# Make pattern model translucent if it exists
+	if pattern_container:
+		_make_node_translucent(pattern_container, 0.3)
+
+func _make_node_translucent(node: Node, alpha: float):
+	print("DEBUG: Checking node: " + str(node.name) + " (type: " + str(node.get_class()) + ")")
+	
+	# Handle MeshInstance3D with dual mesh approach for shadows + transparency
+	if node is MeshInstance3D:
+		var mesh_instance = node as MeshInstance3D
+		print("DEBUG: Creating dual mesh for " + str(mesh_instance.name))
+		
+		# Create shadow-only duplicate
+		var shadow_mesh = mesh_instance.duplicate()
+		shadow_mesh.name = mesh_instance.name + "_Shadow"
+		
+		# Shadow mesh: opaque black material, shadows only
+		var shadow_mat = StandardMaterial3D.new()
+		shadow_mat.albedo_color = Color.BLACK
+		shadow_mat.flags_unshaded = true
+		shadow_mat.flags_do_not_cast_shadows = false
+		shadow_mat.flags_use_point_size = false
+		shadow_mat.flags_world_space_normals = false
+		shadow_mat.flags_fixed_size = false
+		shadow_mat.flags_billboard_keep_scale = false
+		shadow_mat.no_depth_test = false
+		shadow_mat.flags_use_shadow_to_opacity = false
+		shadow_mat.flags_transparent = false
+		# Make it invisible but still cast shadows
+		shadow_mat.flags_albedo_from_vertex_color = false
+		shadow_mesh.material_override = shadow_mat
+		shadow_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		
+		# Original mesh: transparent material, no shadows
+		var transparent_mat = StandardMaterial3D.new()
+		transparent_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		transparent_mat.albedo_color = Color(0.2, 0.2, 0.2, alpha)
+		transparent_mat.flags_do_not_cast_shadows = true
+		mesh_instance.material_override = transparent_mat
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		
+		# Add shadow mesh as sibling
+		mesh_instance.get_parent().add_child(shadow_mesh)
+		print("DEBUG: Created shadow+transparent dual mesh for " + str(mesh_instance.name))
+	
+	# Handle Sprite3D with modulation  
+	elif node is Sprite3D:
+		var sprite = node as Sprite3D
+		sprite.modulate.a = alpha
+		print("DEBUG: Set Sprite3D modulate alpha to " + str(alpha) + " for " + str(sprite.name))
+	
+	# Check children
+	for child in node.get_children():
+		_make_node_translucent(child, alpha)
 
 func clear_pattern_model():
 	# Remove pattern container (which includes all pattern cells and visual collision box)
