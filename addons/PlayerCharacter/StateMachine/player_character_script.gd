@@ -971,6 +971,8 @@ func _sync_health(new_health: float, dead: bool):
 	# If player died, ensure respawn timer is stopped (no automatic respawn)
 	if dead:
 		respawn_timer = 0.0
+		# Clear visual pattern model when player dies (for remote players)
+		clear_pattern_model()
 		print("DEBUG: Player " + str(player_peer_id) + " died via health sync - respawn timer reset")
 	
 	health_changed.emit(current_health, max_health)
@@ -996,6 +998,9 @@ func _handle_death(killer_id: int = -1):
 	is_dead = true
 	death_time = Time.get_unix_time_from_system()
 	respawn_timer = 0.0  # No automatic timer - only start when player chooses
+	
+	# Clear visual pattern model when player dies
+	clear_pattern_model()
 	
 	# Force ragdoll on death
 	if godot_plush_skin:
