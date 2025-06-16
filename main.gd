@@ -1,5 +1,8 @@
 extends Node2D
 
+# Signal emitted when pattern selection is complete
+signal pattern_selected
+
 # Rules for Conway’s Game of Life
 
 #     A cell continues to live if it has two or three live neighbors
@@ -18,9 +21,11 @@ func stub():
 const CELL_SIZE = 64.0
 
 var grids = {"active": {}, "future": {}}
+var instruction_label = null
 
 func _ready():
-	pass
+	# Add instruction label if we're being used as an overlay
+	call_deferred("_check_overlay_mode")
 
 func _draw():
 	# Draw 10x10 grid boundary
@@ -72,7 +77,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			place_or_remove_cell(event.position)
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			GameState.colony = grids.active
-			get_tree().change_scene_to_file("res://Game3D.tscn")
+			# Check if we're being used as an overlay (parent is Game3D)
+			if get_parent().name == "Game3D":
+				# Emit signal for overlay mode
+				pattern_selected.emit()
+			else:
+				# Normal scene transition
+				get_tree().change_scene_to_file("res://Game3D.tscn")
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			change_zoom(-ZOOM_STEP)
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -175,3 +186,30 @@ func _on_timer_timeout():
 			place_visual_cell(cellGridPos)
 		elif grids.active[cellKey] == false && visualCells.has(cellKey):
 			remove_visual_cell(cellGridPos)
+
+func _check_overlay_mode():
+	# Check if we're in overlay mode and add instructions
+	if get_parent() and get_parent().name == "Game3D":
+		_create_instruction_label()
+
+func _create_instruction_label():
+	# Create instruction label for pattern selection
+	instruction_label = Label.new()
+	instruction_label.text = "PATTERN SELECTION\nLeft click: Place/remove cells\nRight click: Confirm pattern and respawn"
+	instruction_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	instruction_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	
+	# Position relative to camera (since we're in a Node2D scene)
+	instruction_label.position = Vector2(-400, -300)  # Top-left relative to camera
+	instruction_label.size = Vector2(800, 80)
+	
+	# Style the label
+	var font_size = 16
+	instruction_label.add_theme_font_size_override("font_size", font_size)
+	instruction_label.add_theme_color_override("font_color", Color.WHITE)
+	instruction_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	instruction_label.add_theme_constant_override("shadow_offset_x", 2)
+	instruction_label.add_theme_constant_override("shadow_offset_y", 2)
+	
+	# Add as child to camera so it follows the view
+	$Camera2D.add_child(instruction_label)

@@ -15,6 +15,11 @@ func _ready():
 					cell_3d.position = position_3d
 					add_child(cell_3d)
 
+	# Restore multiplayer connection if it exists
+	if GameState.restore_multiplayer_peer():
+		# We're returning from pattern selection, restore multiplayer state
+		_restore_multiplayer_state()
+	
 	# Don't spawn local player here - wait for multiplayer connection
 	
 	# Auto-connect for development
@@ -26,10 +31,22 @@ var PORT = 3006
 var HealthUI = preload("res://HealthUI.tscn")
 var health_ui_instance = null
 func _process(_delta: float) -> void:
+	# Handle pattern selection mode inputs (but don't return early)
+	if pattern_selection_overlay != null:
+		if Input.is_action_just_pressed("ragdoll"):  # 'R' key
+			# Transition to 2D pattern editor
+			GameState.colony = get_player_pattern(multiplayer.get_unique_id())
+			get_tree().change_scene_to_file("res://Main.tscn")
+		elif Input.is_action_just_pressed("ui_accept"):  # Enter key
+			# Respawn immediately with current pattern (no changes needed)
+			var local_player = get_local_player()
+			if local_player and local_player.has_method("_request_respawn"):
+				local_player._request_respawn.rpc(true)
+				_hide_pattern_selection_overlay()
 	
 	if Input.is_action_just_pressed("be_server"):
 		var error = peer.create_server(PORT)
-		multiplayer.multiplayer_peer = peer
+		GameState.set_multiplayer_peer(peer, true)  # Store in GameState
 		print(error_string(error))
 
 		DisplayServer.window_set_title("Host")
@@ -285,7 +302,6 @@ func _hide_server_selection_ui():
 
 func _scan_lan_for_games_ui():
 	# Modified version that updates UI instead of auto-connecting
-	print("Scanning LAN for active games...")
 	
 	# Scan a smaller, more targeted range to avoid resource exhaustion
 	var ips_to_scan = [
@@ -301,7 +317,6 @@ func _scan_lan_for_games_ui():
 	# Add current network range IPs 
 	var local_ip = _get_local_ip()
 	if local_ip != "":
-		print("Detected local IP: " + local_ip)
 		var ip_parts = local_ip.split(".")
 		if ip_parts.size() == 4:
 			var base_ip = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "."
@@ -310,21 +325,13 @@ func _scan_lan_for_games_ui():
 			var full_network_scan = false  # Set to true for complete network scan
 			
 			if full_network_scan:
-				print("Performing full network scan (1-254)")
 				# Scan entire subnet (warning: slower but comprehensive)
 				for i in range(1, 255):
 					ips_to_scan.append(base_ip + str(i))
 			else:
-				print("Performing targeted scan (1-254)")
 				# Targeted scan - entire last byte (1-254)
 				for i in range(1, 255):
 					ips_to_scan.append(base_ip + str(i))
-	else:
-		print("Could not detect local IP, using default ranges only")
-	
-	print("Scanning " + str(ips_to_scan.size()) + " IP addresses:")
-	for ip in ips_to_scan:
-		print("  " + ip + ":" + str(PORT))
 	
 	var found_servers = []
 	
@@ -332,17 +339,14 @@ func _scan_lan_for_games_ui():
 	for ip_address in ips_to_scan:
 		# Check for cancellation before each IP test
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("DEBUG: Scan cancellation detected before testing " + ip_address)
 			break
 		
 		if ip_address == local_ip:  # Skip scanning our own IP
-			print("Skipping own IP: " + ip_address)
 			if server_ui_instance != null:
 				server_ui_instance.update_scanning_status(ip_address, "SKIPPED")
 				server_ui_instance.log_scan_attempt(ip_address, "SKIPPED (own IP)")
 			continue
 		
-		print("Testing: " + ip_address)
 		if server_ui_instance != null:
 			server_ui_instance.update_scanning_status(ip_address, "TESTING")
 			server_ui_instance.log_scan_attempt(ip_address, "TESTING...")
@@ -351,11 +355,9 @@ func _scan_lan_for_games_ui():
 		
 		# Check for cancellation after each test (in case user cancelled during the test)
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("DEBUG: Scan cancellation detected after testing " + ip_address)
 			break
 		
 		if is_server_active:
-			print("Found server at: " + ip_address)
 			found_servers.append(ip_address)
 			
 			# Update status and log with success result
@@ -364,14 +366,12 @@ func _scan_lan_for_games_ui():
 				server_ui_instance.update_last_log_entry(ip_address, "SUCCESS - Server found!")
 				server_ui_instance.add_server_to_list(ip_address)
 		else:
-			print("No server at: " + ip_address)
 			if server_ui_instance != null:
 				server_ui_instance.update_scanning_status(ip_address, "FAILED")
 				server_ui_instance.update_last_log_entry(ip_address, "FAILED - No server")
 		
 		# Small delay between scans to prevent resource exhaustion, but check for cancellation first
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("DEBUG: Scan cancellation detected during inter-scan delay")
 			break
 		await get_tree().create_timer(0.01).timeout
 	
@@ -380,8 +380,6 @@ func _scan_lan_for_games_ui():
 		server_ui_instance.finish_scanning()
 
 func _scan_lan_for_games():
-	print("Scanning LAN for active games...")
-	
 	# Scan a smaller, more targeted range to avoid resource exhaustion
 	var ips_to_scan = [
 		"127.0.0.1",      # Localhost
@@ -396,71 +394,49 @@ func _scan_lan_for_games():
 	# Add current network range IPs (more targeted approach)
 	var local_ip = _get_local_ip()
 	if local_ip != "":
-		print("Detected local IP: " + local_ip)
 		var ip_parts = local_ip.split(".")
 		if ip_parts.size() == 4:
 			var base_ip = ip_parts[0] + "." + ip_parts[1] + "." + ip_parts[2] + "."
 			# Scan a few IPs around the local machine
 			for i in range(1, 20):  # Just scan first 20 IPs in local range
 				ips_to_scan.append(base_ip + str(i))
-	else:
-		print("Could not detect local IP, using default ranges only")
-	
-	print("Scanning " + str(ips_to_scan.size()) + " IP addresses:")
-	for ip in ips_to_scan:
-		print("  " + ip + ":" + str(PORT))
 	
 	var found_servers = []
 	
 	# Scan each IP with proper error handling
 	for ip_address in ips_to_scan:
 		if ip_address == local_ip:  # Skip scanning our own IP
-			print("Skipping own IP: " + ip_address)
 			continue
 		
-		print("Testing: " + ip_address)
 		var is_server_active = await _test_server_at_ip(ip_address)
 		if is_server_active:
-			print("Found server at: " + ip_address)
 			found_servers.append(ip_address)
 			# Stop scanning after finding the first server for faster connection
-			print("Stopping scan - found active server")
 			break
-		else:
-			print("No server at: " + ip_address)
 		
 		# Small delay between scans to prevent resource exhaustion
 		await get_tree().create_timer(0.01).timeout
 	
 	# Display results
 	if found_servers.size() > 0:
-		print("Found " + str(found_servers.size()) + " active game(s):")
-		for i in range(found_servers.size()):
-			print("  [" + str(i + 1) + "] " + found_servers[i] + ":" + str(PORT))
-		
 		# For now, auto-connect to the first server found
-		print("Connecting to: " + found_servers[0])
 		_connect_to_server(found_servers[0])
 	else:
-		print("No active games found on LAN")
-		print("Connecting to localhost (127.0.0.1) as fallback...")
+		# Connecting to localhost as fallback
 		_connect_to_server("127.0.0.1")
 
 func _get_local_ip() -> String:
 	# Try to get the local IP address
 	var ip_addresses = IP.get_local_addresses()
-	print("Detected IP addresses: " + str(ip_addresses))
 	
 	# Prioritize 192.168.x.x range (most common home networks)
 	for ip in ip_addresses:
 		if ip.begins_with("192.168."):
-			print("Using 192.168.x IP: " + ip)
 			return ip
 	
 	# Then try 10.x.x.x range
 	for ip in ip_addresses:
 		if ip.begins_with("10."):
-			print("Using 10.x IP: " + ip)
 			return ip
 	
 	# Finally try 172.16-31.x.x range (but exclude WSL virtual networks)
@@ -473,16 +449,13 @@ func _get_local_ip() -> String:
 				if second_octet >= 16 and second_octet <= 31:
 					# Skip WSL ranges that are typically 172.30.x.x
 					if second_octet != 30:
-						print("Using 172.x IP: " + ip)
 						return ip
 	
-	print("No suitable LAN IP found")
 	return ""
 
 func _test_server_at_ip(ip_address: String) -> bool:
 	# Check for cancellation before starting the connection test
 	if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-		print("  DEBUG: Connection test cancelled before starting for " + ip_address)
 		return false
 	
 	# Create a new peer for each test to avoid conflicts
@@ -491,11 +464,8 @@ func _test_server_at_ip(ip_address: String) -> bool:
 	# Try to create client connection
 	var result = test_peer.create_client(ip_address, PORT)
 	if result != OK:
-		print("  Failed to create client for " + ip_address + ": " + error_string(result))
 		test_peer.close()
 		return false
-	
-	print("  Created client connection attempt to " + ip_address)
 	
 	# Use a shorter timeout but check more frequently for better responsiveness
 	var timeout = 0.2  # 200ms timeout - faster response
@@ -505,7 +475,6 @@ func _test_server_at_ip(ip_address: String) -> bool:
 	while Time.get_unix_time_from_system() - start_time < timeout:
 		# Check for cancellation during the connection test
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("  DEBUG: Connection test cancellation detected for " + ip_address)
 			test_peer.close()
 			return false
 		
@@ -516,17 +485,14 @@ func _test_server_at_ip(ip_address: String) -> bool:
 		
 		# Only print status changes to reduce spam, but check for results
 		if status == MultiplayerPeer.CONNECTION_CONNECTED:
-			print("  SUCCESS: Connected to " + ip_address)
 			test_peer.close()
 			return true
 		elif status == MultiplayerPeer.CONNECTION_DISCONNECTED:
-			print("  FAILED: Disconnected from " + ip_address)
 			test_peer.close()
 			return false
 		
 		# Check for cancellation again before the frame wait
 		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			print("  DEBUG: Connection test cancellation detected (second check) for " + ip_address)
 			test_peer.close()
 			return false
 		
@@ -534,7 +500,6 @@ func _test_server_at_ip(ip_address: String) -> bool:
 		await get_tree().create_timer(0.01).timeout
 	
 	# Cleanup and return false for timeout
-	print("  TIMEOUT: No response from " + ip_address + " after " + str(timeout) + "s")
 	test_peer.close()
 	return false
 
@@ -542,7 +507,7 @@ func _connect_to_server(ip_address: String):
 	var error = peer.create_client(ip_address, PORT)
 	print("Connecting to " + ip_address + ": " + error_string(error))
 	
-	multiplayer.multiplayer_peer = peer
+	GameState.set_multiplayer_peer(peer, false)  # Store in GameState
 	DisplayServer.window_set_title("Client")
 	
 	# Store IP for success/failure callbacks
@@ -607,7 +572,7 @@ func _test_server_connection():
 
 func _dev_start_server():
 	var error = peer.create_server(PORT)
-	multiplayer.multiplayer_peer = peer
+	GameState.set_multiplayer_peer(peer, true)
 	print("Dev server started: " + error_string(error))
 	
 	DisplayServer.window_set_title("Dev Host")
@@ -626,7 +591,7 @@ func _dev_start_client():
 	var error = peer.create_client('127.0.0.1', PORT)
 	print("Dev client connecting: " + error_string(error))
 	
-	multiplayer.multiplayer_peer = peer
+	GameState.set_multiplayer_peer(peer, false)
 	DisplayServer.window_set_title("Dev Client")
 	
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -672,6 +637,208 @@ func _create_health_ui():
 		health_ui_instance = HealthUI.instantiate()
 		add_child(health_ui_instance)
 		print("Health UI created")
+
+var pattern_selection_overlay = null
+
+func _show_pattern_selection_overlay():
+	if pattern_selection_overlay != null:
+		return
+	
+	# Create a simple Control overlay with instructions
+	pattern_selection_overlay = Control.new()
+	pattern_selection_overlay.name = "PatternSelectionOverlay"
+	pattern_selection_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	
+	# Create background
+	var background = ColorRect.new()
+	background.color = Color(0, 0, 0, 0.8)  # Semi-transparent black
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pattern_selection_overlay.add_child(background)
+	
+	# Create instruction label
+	var instruction_label = Label.new()
+	instruction_label.text = "PATTERN SELECTION MODE\n\nPress 'R' to enter 2D pattern editor\nOr press 'Enter' to respawn with current pattern"
+	instruction_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	instruction_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	instruction_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	instruction_label.position = Vector2(-200, -50)
+	instruction_label.size = Vector2(400, 100)
+	
+	# Style the label
+	instruction_label.add_theme_font_size_override("font_size", 18)
+	instruction_label.add_theme_color_override("font_color", Color.WHITE)
+	
+	pattern_selection_overlay.add_child(instruction_label)
+	add_child(pattern_selection_overlay)
+	
+	# Show mouse cursor for UI interaction
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	
+	print("Pattern selection overlay created")
+
+func _on_pattern_selected():
+	# Called when player finishes selecting a pattern
+	# Update the player's pattern in our storage
+	var local_peer_id = multiplayer.get_unique_id()
+	player_patterns[local_peer_id] = GameState.colony.duplicate()
+	
+	# Sync the new pattern with other players
+	if multiplayer.is_server():
+		for client_id in multiplayer.get_peers():
+			_sync_player_pattern.rpc_id(client_id, local_peer_id, player_patterns[local_peer_id])
+	else:
+		_sync_player_pattern.rpc_id(1, local_peer_id, player_patterns[local_peer_id])
+	
+	_hide_pattern_selection_overlay()
+	
+	# Find the local player and tell them to respawn
+	var local_player = get_local_player()
+	if local_player and local_player.has_method("_exit_pattern_selection"):
+		local_player._exit_pattern_selection()
+
+func _hide_pattern_selection_overlay():
+	if pattern_selection_overlay != null:
+		pattern_selection_overlay.queue_free()
+		pattern_selection_overlay = null
+		
+		# Restore mouse capture for 3D camera
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		
+		print("Pattern selection overlay removed")
+
+func get_local_player():
+	# Find the local player character
+	if local_player_ref:
+		return local_player_ref
+	
+	# Fallback: look for Player node
+	var player = get_node_or_null("Player")
+	if player and not player.is_remote:
+		return player
+	
+	return null
+
+func _restore_multiplayer_state():
+	# Restore multiplayer state after returning from pattern selection
+	print("Restoring multiplayer state...")
+	
+	# Reconnect signals that were lost during scene change
+	if GameState.is_host:
+		multiplayer.peer_connected.connect(_on_peer_connected)
+		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+		DisplayServer.window_set_title("Host")
+	else:
+		multiplayer.connected_to_server.connect(_on_connected_to_server)
+		multiplayer.connection_failed.connect(_on_connection_failed)
+		multiplayer.server_disconnected.connect(_on_server_disconnected)
+		DisplayServer.window_set_title("Client")
+	
+	# Configure local player
+	_configure_local_player()
+	
+	# Check if the player should still be in pattern selection mode
+	var local_player = get_local_player()
+	var was_in_pattern_selection = false
+	if local_player and local_player.has_meta("in_pattern_selection"):
+		was_in_pattern_selection = local_player.get_meta("in_pattern_selection")
+	
+	# Store local player's pattern (updated from pattern selection)
+	_store_local_player_pattern()
+	
+	# If player was in pattern selection, keep them invisible and show overlay
+	if was_in_pattern_selection and local_player:
+		local_player.visible = false
+		local_player.set_physics_process(false)
+		local_player.set_process(false)
+		_show_pattern_selection_overlay()
+	
+	# Recreate all remote players that are still connected
+	_recreate_remote_players()
+	
+	# IMPORTANT: Send the updated pattern to other players AFTER recreating players
+	var local_peer_id = multiplayer.get_unique_id()
+	if player_patterns.has(local_peer_id):
+		print("DEBUG: Syncing updated pattern to other players. Pattern size: " + str(player_patterns[local_peer_id].size()))
+		# Sync new pattern to all other players
+		if GameState.is_host:
+			for client_id in multiplayer.get_peers():
+				_sync_player_pattern.rpc_id(client_id, local_peer_id, player_patterns[local_peer_id])
+		else:
+			_sync_player_pattern.rpc_id(1, local_peer_id, player_patterns[local_peer_id])
+	
+	# Request all patterns from other players and notify we're back
+	if GameState.is_host:
+		# If we're the host, tell other players we're back
+		_notify_player_returned.rpc()
+	else:
+		# If we're a client, request current game state from server
+		_request_current_game_state.rpc_id(1)
+	
+	# Give a moment for network sync, then update our own model
+	await get_tree().create_timer(0.1).timeout
+	if local_player_ref and local_player_ref.has_method("create_pattern_model"):
+		local_player_ref.create_pattern_model()
+		print("DEBUG: Updated local player pattern model after restoration")
+
+func _recreate_remote_players():
+	# Recreate remote player characters for all connected peers
+	print("Recreating remote players...")
+	
+	# Clear existing remote players first
+	for peer_id in remote_player_dictionary.keys():
+		if remote_player_dictionary[peer_id] and is_instance_valid(remote_player_dictionary[peer_id]):
+			remote_player_dictionary[peer_id].queue_free()
+	remote_player_dictionary.clear()
+	
+	# Get list of currently connected peers
+	var connected_peers = multiplayer.get_peers()
+	print("Connected peers: " + str(connected_peers))
+	
+	# Create remote player for each connected peer (except ourselves)
+	for peer_id in connected_peers:
+		if peer_id != multiplayer.get_unique_id():
+			print("Creating remote player for peer: " + str(peer_id))
+			_add_remote_player_character(peer_id)
+
+@rpc("any_peer", "call_local")
+func _notify_player_returned():
+	# Called when a player returns from pattern selection
+	var sender_id = multiplayer.get_remote_sender_id()
+	print("Player " + str(sender_id) + " returned from pattern selection")
+	
+	# If we don't have this player as a remote, add them
+	if not remote_player_dictionary.has(sender_id):
+		_add_remote_player_character(sender_id)
+	else:
+		# Update their pattern model with the latest pattern
+		_update_player_pattern_model(sender_id)
+
+@rpc("any_peer", "call_remote")
+func _request_current_game_state():
+	# Server sends current game state to the requesting client
+	var requester_id = multiplayer.get_remote_sender_id()
+	print("Sending current game state to peer: " + str(requester_id))
+	
+	# Send list of all connected players
+	var connected_peers = multiplayer.get_peers()
+	_sync_connected_players.rpc_id(requester_id, connected_peers)
+	
+	# Send all stored patterns
+	for stored_peer_id in player_patterns.keys():
+		if str(stored_peer_id) != "local_pattern":  # Don't sync temporary pattern
+			_sync_player_pattern.rpc_id(requester_id, stored_peer_id, player_patterns[stored_peer_id])
+
+@rpc("any_peer", "call_remote")
+func _sync_connected_players(connected_peers: Array):
+	# Receive list of connected players and create remote players for them
+	print("Received connected players list: " + str(connected_peers))
+	
+	for peer_id in connected_peers:
+		if peer_id != multiplayer.get_unique_id() and not remote_player_dictionary.has(peer_id):
+			print("Adding missing remote player: " + str(peer_id))
+			_add_remote_player_character(peer_id)
+
+# Note: Removed _notify_player_pattern_selection - no longer needed since respawn timer is properly managed via _sync_health
 
 
 # var has_loaded_cells = false

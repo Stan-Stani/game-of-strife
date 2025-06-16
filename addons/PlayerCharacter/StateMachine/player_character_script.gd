@@ -169,7 +169,7 @@ func _process(delta: float):
 func _physics_process(delta : float):
 	modify_physics_properties()
 	
-	# Handle respawn timer for dead players
+	# Handle respawn timer - only counts down when explicitly started
 	if is_dead and respawn_timer > 0.0:
 		respawn_timer -= delta
 		if respawn_timer <= 0.0:
@@ -967,6 +967,12 @@ func take_damage(damage: float, source_player_id: int = -1):
 func _sync_health(new_health: float, dead: bool):
 	current_health = new_health
 	is_dead = dead
+	
+	# If player died, ensure respawn timer is stopped (no automatic respawn)
+	if dead:
+		respawn_timer = 0.0
+		print("DEBUG: Player " + str(player_peer_id) + " died via health sync - respawn timer reset")
+	
 	health_changed.emit(current_health, max_health)
 
 func heal(amount: float):
@@ -989,7 +995,7 @@ func _handle_death(killer_id: int = -1):
 	
 	is_dead = true
 	death_time = Time.get_unix_time_from_system()
-	respawn_timer = respawn_delay
+	respawn_timer = 0.0  # No automatic timer - only start when player chooses
 	
 	# Force ragdoll on death
 	if godot_plush_skin:
@@ -1006,9 +1012,47 @@ func _handle_death(killer_id: int = -1):
 	player_died.emit(self)
 	
 	print("Player " + str(player_peer_id) + " died" + ((" (killed by " + str(killer_id) + ")") if killer_id != -1 else ""))
+	
+	# For local player, show pattern selection options
+	if not is_remote:
+		_transition_to_pattern_selection()
+	# For remote players, they stay dead until they send respawn choice
+
+func _transition_to_pattern_selection():
+	# Save current GameState.colony before transitioning (in case player wants to keep current pattern)
+	GameState.colony = Game3D.get_player_pattern(player_peer_id)
+	
+	# Mark player as in pattern selection mode IMMEDIATELY (locally first, then sync)
+	set_meta("in_pattern_selection", true)
+	print("DEBUG: Player " + str(player_peer_id) + " entering pattern selection mode")
+	
+	# Note: No need to sync pattern selection state anymore since respawn timer is properly managed
+	
+	# Delay transition slightly to show death effect
+	await get_tree().create_timer(2.0).timeout
+	
+	# Only transition if we're still in 3D mode and this player is still dead
+	if not is_dead or is_remote:
+		return
+	
+	# Hide the player character but keep it in the scene for multiplayer
+	visible = false
+	set_physics_process(false)
+	set_process(false)
+	
+	# Notify Game3D to show pattern selection UI overlay
+	Game3D._show_pattern_selection_overlay()
 
 func _handle_respawn():
 	if not is_dead:
+		return
+	
+	print("DEBUG: _handle_respawn called for player " + str(player_peer_id) + " (is_remote: " + str(is_remote) + ") - in_pattern_selection: " + str(has_meta("in_pattern_selection") and get_meta("in_pattern_selection")))
+	print("DEBUG: Call stack: " + str(get_stack()))
+	
+	# Check if this is a local player in pattern selection - should not respawn
+	if not is_remote and has_meta("in_pattern_selection") and get_meta("in_pattern_selection"):
+		print("ERROR: Attempted to respawn local player in pattern selection mode!")
 		return
 	
 	# Reset health
@@ -1040,6 +1084,44 @@ func _respawn_at_safe_location():
 
 func get_health_percentage() -> float:
 	return current_health / max_health if max_health > 0.0 else 0.0
+
+@rpc("any_peer", "call_local")
+func _set_pattern_selection_mode(in_selection: bool):
+	# Simple pattern selection state for UI purposes only
+	set_meta("in_pattern_selection", in_selection)
+	
+	if in_selection:
+		print("Player " + str(player_peer_id) + " entered pattern selection mode")
+	else:
+		print("Player " + str(player_peer_id) + " exited pattern selection mode")
+
+@rpc("any_peer", "call_local")
+func _request_respawn(immediate: bool = true):
+	# Called when a player chooses to respawn
+	if not is_dead:
+		print("DEBUG: _request_respawn called but player is not dead - ignoring")
+		return
+	
+	print("DEBUG: Player " + str(player_peer_id) + " requested respawn (immediate: " + str(immediate) + ") - called from: " + str(get_stack()))
+	
+	if immediate:
+		# Respawn immediately
+		_handle_respawn()
+	else:
+		# Start respawn timer (for delayed respawn if needed)
+		respawn_timer = respawn_delay
+		print("DEBUG: Started respawn timer for player " + str(player_peer_id))
+
+func _exit_pattern_selection():
+	# Called when player finishes pattern selection and wants to respawn
+	if not is_dead:
+		return
+	
+	# Mark as no longer in pattern selection
+	_set_pattern_selection_mode.rpc(false)
+	
+	# Request immediate respawn
+	_request_respawn.rpc(true)
 
 func _prevent_bullet_self_collision(new_bullet: RigidBody3D, owner_id: int):
 	# Find all existing bullets from the same player and prevent collision between them
