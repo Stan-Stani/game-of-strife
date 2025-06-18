@@ -203,6 +203,11 @@ echo "jump" > claude_commands_client.txt
 
 # Control all connected players
 echo "list" > claude_commands.txt
+
+# Combat examples
+echo "aim 1" > claude_commands_host.txt          # Host aims at player 1
+echo "shoot 0" > claude_commands_client.txt      # Client shoots at player 0 (host)
+echo "shoot_nearest" > claude_commands.txt       # All players shoot at nearest enemy
 ```
 
 **How It Works:**
@@ -265,6 +270,50 @@ When debug movement is enabled, use numpad keys for direct control:
 - **Numpad 1**: Move down (negative Y)
 
 These controls work in addition to normal WASD movement and are useful for precise positioning during testing.
+
+#### Combat Commands
+
+The Claude command system now supports targeting and shooting at other players in multiplayer matches:
+
+**Basic Combat Commands:**
+```bash
+# Aim at specific players
+aim 1              # Aim at player 1 (local player aims)
+aim 2 0            # Player 0 aims at player 2
+
+# Shoot at specific players  
+shoot 1            # Aim and shoot at player 1 (local player)
+shoot 0 1          # Player 1 shoots at player 0
+
+# Auto-targeting
+nearest            # Find nearest enemy to local player
+nearest 1          # Find nearest enemy to player 1
+shoot_nearest      # Shoot at nearest enemy (local player)
+shoot_nearest 1    # Player 1 shoots at nearest enemy
+```
+
+**Combat Usage Examples:**
+```bash
+# Host targets client in multiplayer
+echo "aim 1" > claude_commands_host.txt
+
+# Client retaliates
+echo "shoot 0" > claude_commands_client.txt
+
+# Auto-combat: everyone shoots at nearest enemy
+echo "shoot_nearest" > claude_commands.txt
+
+# Coordinated attack: player 1 aims while player 2 shoots
+echo "aim 2" > claude_commands_1.txt
+echo "shoot 2" > claude_commands_2.txt
+```
+
+**Combat Mechanics:**
+- Only the local player (player 0) can currently aim (camera control limitation)
+- Shooting automatically aims at target before firing
+- Commands respect shooting cooldowns (0.5 seconds between shots)
+- Pattern bullets are fired based on each player's current Conway's Game of Life pattern
+- All players can be targeted regardless of their role (host/client)
 
 ## Quick Start Commands
 

@@ -710,6 +710,121 @@ func claude_test_movement():
 	else:
 		print("No local player found for movement test")
 
+func claude_aim_at_player(target_player_index: int, aiming_player_index: int = 0):
+	"""Aim at another player by rotating the camera"""
+	var players = claude_get_all_players()
+	
+	if aiming_player_index >= players.size():
+		print("Aiming player index " + str(aiming_player_index) + " not found")
+		return false
+	
+	if target_player_index >= players.size():
+		print("Target player index " + str(target_player_index) + " not found")
+		return false
+	
+	if aiming_player_index == target_player_index:
+		print("Cannot aim at yourself")
+		return false
+	
+	var aiming_player = players[aiming_player_index]
+	var target_player = players[target_player_index]
+	
+	# Only work with local player for now (remote player camera control is complex)
+	if aiming_player_index != 0:
+		print("Can only aim with local player (player 0)")
+		return false
+	
+	# Get positions
+	var aiming_pos = aiming_player.position
+	var target_pos = target_player.position
+	
+	# Calculate direction vector
+	var direction = (target_pos - aiming_pos).normalized()
+	
+	# Calculate angles for aiming
+	# In Godot, Y rotation of 0 points forward (-Z), so we need to adjust
+	var horizontal_angle = atan2(direction.x, -direction.z)  # Negative Z for forward direction
+	var distance_2d = Vector2(direction.x, direction.z).length()
+	var vertical_angle = atan2(direction.y, distance_2d)
+	
+	# Get camera system
+	var camera_system = aiming_player.get_node("OrbitView")
+	if camera_system:
+		# Rotate camera to look at target
+		camera_system.rotation.y = horizontal_angle
+		camera_system.rotation.x = -vertical_angle  # Negative because camera X rotation is inverted
+		
+		print("Aiming player " + str(aiming_player_index) + " at player " + str(target_player_index))
+		print("Target position: " + str(target_pos))
+		print("Aiming angles: horizontal=" + str(rad_to_deg(horizontal_angle)) + "°, vertical=" + str(rad_to_deg(vertical_angle)) + "°")
+		return true
+	else:
+		print("Camera system not found for player " + str(aiming_player_index))
+		return false
+
+func claude_shoot_at_player(target_player_index: int, shooting_player_index: int = 0):
+	"""Aim at a player and shoot"""
+	var players = claude_get_all_players()
+	
+	if shooting_player_index >= players.size():
+		print("Shooting player index " + str(shooting_player_index) + " not found")
+		return false
+	
+	if target_player_index >= players.size():
+		print("Target player index " + str(target_player_index) + " not found")
+		return false
+	
+	if shooting_player_index == target_player_index:
+		print("Cannot shoot at yourself")
+		return false
+	
+	# First aim at the target
+	if not claude_aim_at_player(target_player_index, shooting_player_index):
+		print("Failed to aim at target")
+		return false
+	
+	# Wait a moment for aiming to stabilize
+	await get_tree().create_timer(0.2).timeout
+	
+	# Simulate shoot action
+	_simulate_player_input("shoot", true, shooting_player_index)
+	await get_tree().create_timer(0.1).timeout
+	_simulate_player_input("shoot", false, shooting_player_index)
+	
+	print("Player " + str(shooting_player_index) + " shot at player " + str(target_player_index))
+	return true
+
+func claude_get_nearest_enemy_player(player_index: int = 0) -> int:
+	"""Find the nearest enemy player to the given player"""
+	var players = claude_get_all_players()
+	
+	if player_index >= players.size():
+		print("Player index " + str(player_index) + " not found")
+		return -1
+	
+	var base_player = players[player_index]
+	var base_pos = base_player.position
+	var nearest_index = -1
+	var nearest_distance = INF
+	
+	for i in range(players.size()):
+		if i == player_index:
+			continue  # Skip self
+		
+		var other_player = players[i]
+		var distance = base_pos.distance_to(other_player.position)
+		
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_index = i
+	
+	if nearest_index != -1:
+		print("Nearest enemy to player " + str(player_index) + " is player " + str(nearest_index) + " at distance " + str(nearest_distance))
+	else:
+		print("No enemy players found for player " + str(player_index))
+	
+	return nearest_index
+
 # === INPUT SIMULATION FUNCTIONS ===
 
 var simulated_inputs = {}  # Track which inputs are being simulated per player
@@ -946,6 +1061,38 @@ func _execute_claude_command(command: String, source_file: String = ""):
 		"test":
 			claude_test_movement()
 		
+		"aim", "aim_at":
+			if parts.size() >= 2:
+				var target_player = parts[1].to_int()
+				var aiming_player = parts[2].to_int() if parts.size() > 2 else 0
+				claude_aim_at_player(target_player, aiming_player)
+			else:
+				print("Usage: aim target_player [aiming_player]")
+		
+		"shoot", "shoot_at":
+			if parts.size() >= 2:
+				var target_player = parts[1].to_int()
+				var shooting_player = parts[2].to_int() if parts.size() > 2 else 0
+				claude_shoot_at_player(target_player, shooting_player)
+			else:
+				print("Usage: shoot target_player [shooting_player]")
+		
+		"nearest", "nearest_enemy":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			var nearest = claude_get_nearest_enemy_player(player_index)
+			if nearest != -1:
+				print("Nearest enemy to player " + str(player_index) + " is player " + str(nearest))
+			else:
+				print("No enemies found for player " + str(player_index))
+		
+		"shoot_nearest":
+			var shooting_player = parts[1].to_int() if parts.size() > 1 else 0
+			var nearest = claude_get_nearest_enemy_player(shooting_player)
+			if nearest != -1:
+				claude_shoot_at_player(nearest, shooting_player)
+			else:
+				print("No enemies found to shoot at for player " + str(shooting_player))
+		
 		"help":
 			print("Claude Code movement commands:")
 			print("=== Emergency Position Control ===")
@@ -957,6 +1104,11 @@ func _execute_claude_command(command: String, source_file: String = ""):
 			print("  simulate_input action true/false [player] - Simulate input action")
 			print("  enable_numpad_movement [player] - Enable numpad controls")
 			print("  disable_numpad_movement [player] - Disable numpad controls")
+			print("=== Combat Commands ===")
+			print("  aim target_player [aiming_player] - Aim at another player")
+			print("  shoot target_player [shooting_player] - Aim and shoot at another player")
+			print("  nearest [player] - Find nearest enemy player")
+			print("  shoot_nearest [player] - Shoot at nearest enemy")
 			print("=== Info Commands ===")
 			print("  status/pos [player] - Show player status")
 			print("  list - List all players")
