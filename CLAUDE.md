@@ -109,16 +109,16 @@ godot --auto-client 192.168.1.100   # Connect to specific IP with block pattern
 Use the included test script for easier testing with timeouts:
 ```bash
 # Test complete server-client connection
-./test_multiplayer.sh test-connection
+./tests/test_multiplayer.sh test-connection
 
 # Start headless server
-./test_multiplayer.sh server
+./tests/test_multiplayer.sh server
 
 # Connect as client
-./test_multiplayer.sh client [ip_address]
+./tests/test_multiplayer.sh client [ip_address]
 
 # Run network tests
-./test_multiplayer.sh network-test
+./tests/test_multiplayer.sh network-test
 ```
 
 #### Cleaning Up Background Processes
@@ -134,6 +134,53 @@ tasklist.exe | grep -i godot
 ```
 
 This is especially important after running multiple test sessions to prevent resource issues.
+
+### Unit Testing
+
+The project includes comprehensive unit tests for multiplayer functionality:
+
+#### Running Tests
+
+```bash
+# Quick verification of all functionality
+./tests/verify_tests.sh
+
+# Run full automated test suite  
+./tests/run_tests.sh
+
+# Manual test execution (open in Godot)
+# Load and run tests/TestMain.tscn
+```
+
+#### Test Coverage
+
+**Test Framework** (`tests/test_framework.gd`):
+- Simple assertion-based testing system
+- Test result tracking and reporting
+- Pass/fail statistics
+
+**Multiplayer Core Tests** (`tests/test_multiplayer.gd`):
+- GameState initialization and pattern storage
+- Multiplayer peer creation and management
+- Pattern sharing and synchronization
+- Player pattern storage per peer ID
+
+**Command System Tests** (`tests/test_command_system.gd`):
+- Command file parsing and validation
+- Role-based file selection (host/client)
+- Peer ID specific file monitoring
+- Command execution and file clearing
+
+**Integration Tests** (`tests/test_integration.gd`):
+- End-to-end multiplayer connection flow
+- Command file system in multiplayer environment
+- Pattern synchronization between players
+
+#### Test Results
+- All tests verify core multiplayer functionality works correctly
+- Command file system supports independent player control
+- Pattern sharing maintains game balance (damage/velocity scaling)
+- Server-client architecture handles connections reliably
 
 ### Claude Code Player Control API
 
