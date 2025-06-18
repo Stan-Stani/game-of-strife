@@ -24,6 +24,9 @@ var grids = {"active": {}, "future": {}}
 var instruction_label = null
 
 func _ready():
+	# Handle command line arguments for multiplayer testing
+	_handle_command_line_args()
+	
 	# Add instruction label if we're being used as an overlay
 	call_deferred("_check_overlay_mode")
 
@@ -213,3 +216,88 @@ func _create_instruction_label():
 	
 	# Add as child to camera so it follows the view
 	$Camera2D.add_child(instruction_label)
+
+# Command line argument handling for multiplayer testing
+func _handle_command_line_args():
+	var args = OS.get_cmdline_args()
+	print("Command line args: " + str(args))
+	var i = 0
+	
+	while i < args.size():
+		var arg = args[i]
+		
+		match arg:
+			"--host":
+				print("Auto-starting server from command line")
+				call_deferred("_auto_start_server")
+			
+			"--client":
+				if i + 1 < args.size():
+					var ip = args[i + 1]
+					print("Auto-connecting to client: " + ip)
+					call_deferred("_auto_connect_client", ip)
+					i += 1
+				else:
+					print("Error: --client requires IP address")
+			
+			"--test-network":
+				print("Running network tests from command line")
+				call_deferred("_run_network_tests")
+			
+			"--port":
+				if i + 1 < args.size():
+					var port = args[i + 1].to_int()
+					if port > 0:
+						GameState.PORT = port
+						print("Using custom port: " + str(port))
+					else:
+						print("Error: Invalid port number")
+					i += 1
+				else:
+					print("Error: --port requires port number")
+			
+			"--debug-multiplayer":
+				print("Enabling debug multiplayer logging")
+				_enable_debug_logging()
+			
+			"--test-local-multiplayer":
+				print("Starting local multiplayer test")
+				call_deferred("_test_local_multiplayer")
+			
+			"--skip-2d":
+				print("Skipping 2D mode, going directly to 3D")
+				call_deferred("_skip_to_3d")
+		
+		i += 1
+
+func _auto_start_server():
+	# Store pattern and start server, then transition to 3D
+	GameState.colony = grids.active
+	GameState.set_meta("auto_start_server", true)
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+
+func _auto_connect_client(ip: String):
+	# Transition to 3D and connect to server
+	GameState.colony = grids.active
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+	# Store the IP for auto-connection in Game3D
+	GameState.set_meta("auto_connect_ip", ip)
+
+func _run_network_tests():
+	print("=== Network Connectivity Tests ===")
+	GameState.test_all_network_functions()
+
+func _enable_debug_logging():
+	# Enable verbose multiplayer logging
+	GameState.set_meta("debug_multiplayer", true)
+
+func _test_local_multiplayer():
+	# Start both server and client on localhost for testing
+	GameState.colony = grids.active
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+	GameState.set_meta("test_local_multiplayer", true)
+
+func _skip_to_3d():
+	# Skip directly to 3D mode with empty colony
+	GameState.colony = {}
+	get_tree().change_scene_to_file("res://Game3D.tscn")

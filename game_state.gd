@@ -2,8 +2,8 @@ extends Node
 
 var colony
 
-# Constants
-const PORT = 3006
+# Network configuration (can be overridden by command line)
+var PORT = 3006
 
 # Multiplayer persistence across scenes
 var multiplayer_peer: ENetMultiplayerPeer = null
@@ -307,3 +307,273 @@ func get_local_ip() -> String:
 						return ip
 	
 	return ""
+
+# ===== MULTIPLAYER TESTING FUNCTIONS =====
+
+# Test all network functionality
+func test_all_network_functions():
+	print("=== Starting Comprehensive Network Tests ===")
+	
+	# Test 1: IP discovery
+	var local_ip = get_local_ip()
+	print("Local IP: " + local_ip)
+	if local_ip == "":
+		print("❌ FAILED: Could not determine local IP")
+	else:
+		print("✅ PASSED: Local IP detected")
+	
+	# Test 2: Server creation
+	var test_server_result = await test_server_creation()
+	print("Server Creation Test: " + ("✅ PASSED" if test_server_result else "❌ FAILED"))
+	
+	# Test 3: Connection test to localhost
+	var localhost_test = await test_server_at_ip("127.0.0.1", 0.5)
+	print("Localhost Connection Test: " + ("✅ PASSED" if localhost_test else "❌ FAILED"))
+	
+	# Test 4: Pattern sync functionality
+	var pattern_test = test_pattern_synchronization()
+	print("Pattern Sync Test: " + ("✅ PASSED" if pattern_test else "❌ FAILED"))
+	
+	# Test 5: Network performance benchmark
+	await benchmark_network_performance()
+	
+	print("=== Network Tests Complete ===")
+
+# Test server creation and cleanup
+func test_server_creation() -> bool:
+	print("Testing server creation...")
+	
+	# Store current state
+	var original_peer = multiplayer_peer
+	var original_host = is_host
+	var original_connected = is_connected
+	
+	# Create test server
+	var test_peer = ENetMultiplayerPeer.new()
+	var result = test_peer.create_server(PORT + 1000)  # Use different port for testing
+	
+	if result != OK:
+		print("  Failed to create test server: " + error_string(result))
+		return false
+	
+	# Cleanup test server
+	test_peer.close()
+	
+	# Restore original state
+	multiplayer_peer = original_peer
+	is_host = original_host
+	is_connected = original_connected
+	
+	print("  Server creation test successful")
+	return true
+
+# Test pattern synchronization without network
+func test_pattern_synchronization() -> bool:
+	print("Testing pattern synchronization...")
+	
+	# Create test patterns
+	var test_pattern_1 = {Vector2(0,0): true, Vector2(1,0): true, Vector2(0,1): true}
+	var test_pattern_2 = {Vector2(2,2): true, Vector2(3,2): true, Vector2(2,3): true}
+	
+	# Store original patterns
+	var original_patterns = player_patterns.duplicate()
+	
+	# Test pattern storage
+	player_patterns[1] = test_pattern_1
+	player_patterns[2] = test_pattern_2
+	
+	# Test pattern retrieval
+	var retrieved_1 = get_player_pattern(1)
+	var retrieved_2 = get_player_pattern(2)
+	
+	var success = (retrieved_1 == test_pattern_1) and (retrieved_2 == test_pattern_2)
+	
+	# Restore original patterns
+	player_patterns = original_patterns
+	
+	if success:
+		print("  Pattern synchronization test successful")
+	else:
+		print("  Pattern synchronization test failed")
+	
+	return success
+
+# Benchmark network performance
+func benchmark_network_performance():
+	print("Benchmarking network performance...")
+	
+	var test_ips = ["127.0.0.1", get_local_ip()]
+	var results = {}
+	
+	for ip in test_ips:
+		if ip == "":
+			continue
+			
+		print("  Testing " + ip + "...")
+		var start_time = Time.get_unix_time_from_system()
+		
+		# Test connection with short timeout
+		var connection_result = await test_server_at_ip(ip, 0.1)
+		
+		var end_time = Time.get_unix_time_from_system()
+		var response_time = (end_time - start_time) * 1000  # Convert to milliseconds
+		
+		results[ip] = {
+			"connected": connection_result,
+			"response_time_ms": response_time
+		}
+		
+		print("    " + ip + ": " + str(response_time) + "ms (" + ("connected" if connection_result else "no server") + ")")
+	
+	print("  Network performance benchmark complete")
+
+# Simulate multiplayer scenario for testing
+func simulate_multiplayer_scenario():
+	print("Simulating multiplayer scenario...")
+	
+	# Create mock players
+	var mock_players = [1, 2, 3]
+	var mock_patterns = {
+		1: {Vector2(0,0): true, Vector2(1,0): true},
+		2: {Vector2(2,0): true, Vector2(3,0): true},
+		3: {Vector2(0,2): true, Vector2(1,2): true}
+	}
+	
+	# Store original state
+	var original_patterns = player_patterns.duplicate()
+	
+	# Simulate player connections
+	for player_id in mock_players:
+		player_patterns[player_id] = mock_patterns[player_id]
+		print("  Mock player " + str(player_id) + " connected with " + str(mock_patterns[player_id].size()) + " cells")
+		
+		# Simulate pattern sync
+		player_pattern_received.emit(player_id, mock_patterns[player_id])
+	
+	# Wait a moment
+	await get_tree().create_timer(1.0).timeout
+	
+	# Simulate disconnections
+	for player_id in mock_players:
+		if player_patterns.has(player_id):
+			player_patterns.erase(player_id)
+		print("  Mock player " + str(player_id) + " disconnected")
+		peer_disconnected.emit(player_id)
+	
+	# Restore original state
+	player_patterns = original_patterns
+	
+	print("Multiplayer scenario simulation complete")
+
+# Test server scanning functionality
+func test_server_scanning():
+	print("Testing server scanning functionality...")
+	
+	var test_ips = ["127.0.0.1", "192.168.1.1", "10.0.0.1"]
+	var scan_results = []
+	
+	for ip in test_ips:
+		print("  Scanning " + ip + "...")
+		var result = await test_server_at_ip(ip, 0.2)
+		scan_results.append({"ip": ip, "active": result})
+		print("    " + ip + ": " + ("✅ Server found" if result else "❌ No server"))
+	
+	print("Server scanning test complete")
+	return scan_results
+
+# Test local multiplayer setup (both server and client on same machine)
+func test_local_multiplayer_setup():
+	print("Testing local multiplayer setup...")
+	
+	# This would typically be called from Game3D to actually create server/client
+	print("  Starting server on localhost...")
+	var server_result = create_server()
+	
+	if server_result == OK:
+		print("  ✅ Server started successfully")
+		
+		# Wait a moment for server to fully initialize
+		await get_tree().create_timer(0.5).timeout
+		
+		# Test connection to our own server
+		var connection_test = await test_server_at_ip("127.0.0.1", 1.0)
+		print("  Connection to own server: " + ("✅ Success" if connection_test else "❌ Failed"))
+		
+		# Cleanup
+		clear_multiplayer()
+		print("  Server cleaned up")
+		
+		return connection_test
+	else:
+		print("  ❌ Failed to start server: " + error_string(server_result))
+		return false
+
+# Stress test the multiplayer system
+func stress_test_multiplayer():
+	print("Running multiplayer stress test...")
+	
+	# Simulate rapid pattern updates
+	var stress_patterns = []
+	for i in range(50):
+		var pattern = {}
+		for j in range(10):
+			pattern[Vector2(i % 10, j)] = (i + j) % 2 == 0
+		stress_patterns.append(pattern)
+	
+	# Store original patterns
+	var original_patterns = player_patterns.duplicate()
+	
+	# Rapid pattern updates
+	print("  Testing rapid pattern updates...")
+	var start_time = Time.get_unix_time_from_system()
+	
+	for i in range(stress_patterns.size()):
+		player_patterns[i] = stress_patterns[i]
+		player_pattern_received.emit(i, stress_patterns[i])
+		
+		# Brief pause to prevent system overload
+		if i % 10 == 0:
+			await get_tree().process_frame
+	
+	var end_time = Time.get_unix_time_from_system()
+	var total_time = end_time - start_time
+	
+	print("  Processed " + str(stress_patterns.size()) + " patterns in " + str(total_time) + " seconds")
+	print("  Average: " + str(total_time / stress_patterns.size()) + " seconds per pattern")
+	
+	# Cleanup
+	player_patterns = original_patterns
+	
+	print("Stress test complete")
+
+# Get network diagnostics
+func get_network_diagnostics() -> Dictionary:
+	var diagnostics = {
+		"local_ip": get_local_ip(),
+		"port": PORT,
+		"is_host": is_host,
+		"is_connected": is_connected,
+		"connected_peers": [],
+		"player_patterns_count": player_patterns.size(),
+		"multiplayer_peer_status": "none"
+	}
+	
+	if multiplayer_peer:
+		diagnostics.multiplayer_peer_status = str(multiplayer_peer.get_connection_status())
+		diagnostics.connected_peers = multiplayer.get_peers()
+	
+	return diagnostics
+
+# Print current network status
+func print_network_status():
+	var diagnostics = get_network_diagnostics()
+	
+	print("=== Network Status ===")
+	print("Local IP: " + diagnostics.local_ip)
+	print("Port: " + str(diagnostics.port))
+	print("Is Host: " + str(diagnostics.is_host))
+	print("Is Connected: " + str(diagnostics.is_connected))
+	print("Connected Peers: " + str(diagnostics.connected_peers))
+	print("Player Patterns: " + str(diagnostics.player_patterns_count))
+	print("Peer Status: " + diagnostics.multiplayer_peer_status)
+	print("=====================")
