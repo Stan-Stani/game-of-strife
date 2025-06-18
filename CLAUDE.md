@@ -58,6 +58,17 @@ Located in `addons/PlayerCharacter/`, uses a state machine pattern:
 
 This is a Godot project - open `project.godot` in Godot Engine 4.4+ to run/test the game.
 
+### WSL Users
+If using WSL with Godot installed via Chocolatey on Windows:
+```bash
+# Add this alias to ~/.bashrc for convenience
+alias godot="/mnt/c/ProgramData/chocolatey/bin/godot.exe"
+
+# Usage:
+godot project.godot         # Open in editor
+godot -- project.godot      # Run game directly
+```
+
 ## Technical Notes
 
 - Cell size constant: 64.0 pixels (main.gd:18)

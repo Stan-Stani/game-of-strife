@@ -6,7 +6,7 @@ var PlayerCharacterScene = load("res://addons/PlayerCharacter/PlayerCharacterSce
 
 func _ready():
 	# Store the pattern immediately when scene loads (before multiplayer overwrites it)
-	_store_pattern_on_load()
+	GameState.store_pattern_on_load()
 	
 	for cellPos in GameState.colony:
 				if GameState.colony[cellPos] == true:
@@ -14,6 +14,15 @@ func _ready():
 					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
 					cell_3d.position = position_3d
 					add_child(cell_3d)
+	
+	# Connect to GameState signals
+	GameState.peer_connected.connect(_on_peer_connected)
+	GameState.peer_disconnected.connect(_on_peer_disconnected)
+	GameState.connected_to_server.connect(_on_connected_to_server)
+	GameState.connection_failed.connect(_on_connection_failed)
+	GameState.server_disconnected.connect(_on_server_disconnected)
+	GameState.player_pattern_received.connect(_on_player_pattern_received)
+	GameState.add_remote_player.connect(_add_remote_player_character)
 
 	# Restore multiplayer connection if it exists
 	if GameState.restore_multiplayer_peer():
@@ -26,8 +35,6 @@ func _ready():
 	# _check_dev_auto_connect()
 	
 	
-var peer = ENetMultiplayerPeer.new()
-var PORT = 3006
 var HealthUI = preload("res://HealthUI.tscn")
 var health_ui_instance = null
 func _process(_delta: float) -> void:
@@ -35,7 +42,7 @@ func _process(_delta: float) -> void:
 	if pattern_selection_overlay != null:
 		if Input.is_action_just_pressed("ragdoll"):  # 'R' key
 			# Transition to 2D pattern editor
-			GameState.colony = get_player_pattern(multiplayer.get_unique_id())
+			GameState.colony = GameState.get_player_pattern(multiplayer.get_unique_id())
 			get_tree().change_scene_to_file("res://Main.tscn")
 		elif Input.is_action_just_pressed("ui_accept"):  # Enter key
 			# Respawn immediately with current pattern (no changes needed)
@@ -45,26 +52,18 @@ func _process(_delta: float) -> void:
 				_hide_pattern_selection_overlay()
 	
 	if Input.is_action_just_pressed("be_server"):
-		var error = peer.create_server(PORT)
-		GameState.set_multiplayer_peer(peer, true)  # Store in GameState
-		print(error_string(error))
-
-		DisplayServer.window_set_title("Host")
-
-		multiplayer.peer_connected.connect(_on_peer_connected)
-		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-		
-		# Configure existing player for multiplayer
-		_configure_local_player()
-		
-		# Store local player's pattern
-		_store_local_player_pattern()
+		var error = GameState.create_server()
+		if error == OK:
+			DisplayServer.window_set_title("Host")
+			# Configure existing player for multiplayer
+			_configure_local_player()
+			# Create health UI for local player
+			_create_health_ui()
 		
 	if Input.is_action_just_pressed("be_client"):
 		_show_server_selection_ui()
 
 var remote_player_dictionary: Dictionary = {}
-var player_patterns: Dictionary = {}
 
 # UI Management
 var ServerSelectionUI = preload("res://ServerSelectionUI.tscn")
@@ -99,32 +98,15 @@ func receive_player_input(peer_id: int, input_data: Dictionary):
 		pass
 
 func _on_peer_connected(peer_id: int):
-	print("Player connected: " + str(peer_id))
-	# Tell everyone except the new peer to add the new peer as remote
-	for existing_peer in multiplayer.get_peers():
-		if existing_peer != peer_id:
-			_add_remote_player_character.rpc_id(existing_peer, peer_id)
-	
-	# Tell the new peer to add the host as remote
-	_add_remote_player_character.rpc_id(peer_id, multiplayer.get_unique_id())
-	
-	# Add the new peer locally on the host
-	if multiplayer.is_server():
-		_add_remote_player_character(peer_id)
-		
-		# Send all existing patterns to the new peer
-		_request_all_patterns.rpc_id(peer_id)
+	# GameState already handles most of the logic, we just ensure visual updates
+	print("[Game3D] Handling peer connected: " + str(peer_id))
 	
 
 func _on_peer_disconnected(peer_id: int):
-	print("Player disconnected: " + str(peer_id))
+	print("[Game3D] Handling peer disconnected: " + str(peer_id))
 	if remote_player_dictionary.has(peer_id):
 		remote_player_dictionary[peer_id].queue_free()
 		remote_player_dictionary.erase(peer_id)
-	
-	# Clean up pattern data
-	if player_patterns.has(peer_id):
-		player_patterns.erase(peer_id)
 
 var local_player_ref: CharacterBody3D
 
@@ -150,36 +132,30 @@ func _configure_local_player():
 		pass
 
 func _on_connected_to_server():
-	print("Connected to server")
+	print("[Game3D] Connected to server")
 	_configure_local_player()
-	
-	# Store local player's pattern and send to server
-	_store_local_player_pattern()
-	_send_pattern_to_server()
-	
-	# Request all existing patterns from server
-	_request_all_patterns.rpc_id(1)
 	
 	# Create health UI for client
 	_create_health_ui()
 	
 	# Notify server list of successful connection
-	if peer.has_meta("connecting_ip") and server_ui_instance:
-		server_ui_instance.server_connection_succeeded(peer.get_meta("connecting_ip"))
+	if GameState.multiplayer_peer and GameState.multiplayer_peer.has_meta("connecting_ip") and server_ui_instance:
+		server_ui_instance.server_connection_succeeded(GameState.multiplayer_peer.get_meta("connecting_ip"))
 
 func _on_connection_failed():
-	print("Connection to server failed")
+	print("[Game3D] Connection to server failed")
 	
 	# Notify server list of failed connection
-	if peer.has_meta("connecting_ip") and server_ui_instance:
-		server_ui_instance.server_connection_failed(peer.get_meta("connecting_ip"))
-		
-	# Clean up
-	peer.close()
+	if GameState.multiplayer_peer and GameState.multiplayer_peer.has_meta("connecting_ip") and server_ui_instance:
+		server_ui_instance.server_connection_failed(GameState.multiplayer_peer.get_meta("connecting_ip"))
 
 func _on_server_disconnected():
-	print("Disconnected from server")
+	print("[Game3D] Disconnected from server")
 	# Could add logic here to mark server as unreliable
+
+func _on_player_pattern_received(peer_id: int, pattern_data: Dictionary):
+	# Update the visual model for this peer if they have a player character
+	_update_player_pattern_model(peer_id)
 
 @rpc("any_peer", "call_remote")
 func _request_initial_position():
@@ -207,58 +183,8 @@ func _sync_initial_position(peer_id: int, position_data: Dictionary):
 func _request_position_for_peer(peer_id: int):
 	_request_initial_position.rpc_id(peer_id)
 
-func _store_local_player_pattern():
-	var local_peer_id = multiplayer.get_unique_id()
-	# Use the pattern that was stored on load
-	var pattern_to_store = player_patterns.get("local_pattern", GameState.colony.duplicate())
-	player_patterns[local_peer_id] = pattern_to_store
-	
-	# Clean up the temporary pattern
-	if player_patterns.has("local_pattern"):
-		player_patterns.erase("local_pattern")
-
-func _send_pattern_to_server():
-	var local_peer_id = multiplayer.get_unique_id()
-	if player_patterns.has(local_peer_id):
-		_sync_player_pattern.rpc_id(1, local_peer_id, player_patterns[local_peer_id])
-
-@rpc("any_peer", "call_remote")
-func _sync_player_pattern(peer_id: int, pattern_data: Dictionary):
-	player_patterns[peer_id] = pattern_data
-	print("Received pattern from peer " + str(peer_id) + " with " + str(pattern_data.size()) + " cells")
-	
-	# Update the visual model for this peer if they have a player character
-	_update_player_pattern_model(peer_id)
-	
-	# If this is the server, forward the pattern to all other clients
-	if multiplayer.is_server():
-		for client_id in multiplayer.get_peers():
-			if client_id != peer_id:
-				_sync_player_pattern.rpc_id(client_id, peer_id, pattern_data)
-
-@rpc("any_peer", "call_remote")
-func _request_all_patterns():
-	var sender_id = multiplayer.get_remote_sender_id()
-	print("Sending all patterns to new peer: " + str(sender_id))
-	
-	# Send all stored patterns to the requesting peer (excluding temp patterns)
-	for stored_peer_id in player_patterns.keys():
-		if str(stored_peer_id) != "local_pattern":  # Don't sync temporary pattern
-			_sync_player_pattern.rpc_id(sender_id, stored_peer_id, player_patterns[stored_peer_id])
-
-func _store_pattern_on_load():
-	# Store the current pattern in a temporary key to preserve it before multiplayer
-	var temp_key = "local_pattern"
-	player_patterns[temp_key] = GameState.colony.duplicate()
-
 func get_player_pattern(peer_id: int) -> Dictionary:
-
-	if player_patterns.has(peer_id):
-		return player_patterns[peer_id]
-	else:
-		pass
-		# Fallback to current GameState.colony if no stored pattern
-		return GameState.colony
+	return GameState.get_player_pattern(peer_id)
 
 func _show_server_selection_ui():
 	# Release mouse cursor for UI interaction
@@ -426,175 +352,35 @@ func _scan_lan_for_games():
 		_connect_to_server("127.0.0.1")
 
 func _get_local_ip() -> String:
-	# Try to get the local IP address
-	var ip_addresses = IP.get_local_addresses()
-	
-	# Prioritize 192.168.x.x range (most common home networks)
-	for ip in ip_addresses:
-		if ip.begins_with("192.168."):
-			return ip
-	
-	# Then try 10.x.x.x range
-	for ip in ip_addresses:
-		if ip.begins_with("10."):
-			return ip
-	
-	# Finally try 172.16-31.x.x range (but exclude WSL virtual networks)
-	for ip in ip_addresses:
-		if ip.begins_with("172."):
-			# Check if it's in the valid private range (172.16.0.0 to 172.31.255.255)
-			var parts = ip.split(".")
-			if parts.size() == 4:
-				var second_octet = int(parts[1])
-				if second_octet >= 16 and second_octet <= 31:
-					# Skip WSL ranges that are typically 172.30.x.x
-					if second_octet != 30:
-						return ip
-	
-	return ""
+	return GameState.get_local_ip()
 
 func _test_server_at_ip(ip_address: String) -> bool:
 	# Check for cancellation before starting the connection test
 	if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
 		return false
 	
-	# Create a new peer for each test to avoid conflicts
-	var test_peer = ENetMultiplayerPeer.new()
+	# Use GameState's test function
+	var result = await GameState.test_server_at_ip(ip_address)
 	
-	# Try to create client connection
-	var result = test_peer.create_client(ip_address, PORT)
-	if result != OK:
-		test_peer.close()
+	# Check for cancellation after the test
+	if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
 		return false
 	
-	# Use a shorter timeout but check more frequently for better responsiveness
-	var timeout = 0.2  # 200ms timeout - faster response
-	var start_time = Time.get_unix_time_from_system()
-	
-	# Simple polling loop with timeout AND cancellation check - much more frequent checks
-	while Time.get_unix_time_from_system() - start_time < timeout:
-		# Check for cancellation during the connection test
-		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			test_peer.close()
-			return false
-		
-		# IMPORTANT: Poll the peer to process network events
-		test_peer.poll()
-		
-		var status = test_peer.get_connection_status()
-		
-		# Only print status changes to reduce spam, but check for results
-		if status == MultiplayerPeer.CONNECTION_CONNECTED:
-			test_peer.close()
-			return true
-		elif status == MultiplayerPeer.CONNECTION_DISCONNECTED:
-			test_peer.close()
-			return false
-		
-		# Check for cancellation again before the frame wait
-		if server_ui_instance != null and server_ui_instance.is_scan_cancelled():
-			test_peer.close()
-			return false
-		
-		# Much shorter wait for faster cancellation response
-		await get_tree().create_timer(0.01).timeout
-	
-	# Cleanup and return false for timeout
-	test_peer.close()
-	return false
+	return result
 
 func _connect_to_server(ip_address: String):
-	var error = peer.create_client(ip_address, PORT)
-	print("Connecting to " + ip_address + ": " + error_string(error))
-	
-	GameState.set_multiplayer_peer(peer, false)  # Store in GameState
-	DisplayServer.window_set_title("Client")
-	
-	# Store IP for success/failure callbacks
-	peer.set_meta("connecting_ip", ip_address)
-	
-	multiplayer.connected_to_server.connect(_on_connected_to_server)
-	multiplayer.connection_failed.connect(_on_connection_failed)
-	multiplayer.server_disconnected.connect(_on_server_disconnected)
-
-func _check_dev_auto_connect():
-	# Check for development auto-connect based on command line arguments or debug mode
-	var args = OS.get_cmdline_args()
-	
-	# Check if running in debug mode (in editor) or specific command line args
-	var is_debug = OS.is_debug_build()
-	var auto_server = "--server" in args or "--host" in args
-	var auto_client = "--client" in args
-	
-	# For easy testing: test if server is actually running and accepting connections
-	if is_debug and not auto_server and not auto_client:
-		call_deferred("_test_server_connection")
-	elif auto_server:
-		call_deferred("_dev_start_server")
-	elif auto_client:
-		call_deferred("_dev_start_client")
-
-func _test_server_connection():
-	
-	# Create a test multiplayer peer to check connection
-	var test_peer = ENetMultiplayerPeer.new()
-	var test_multiplayer = MultiplayerAPI.create_default_interface()
-	
-	# Try to connect
-	var result = test_peer.create_client('127.0.0.1', PORT)
-	if result != OK:
-		_dev_start_server()
-		return
-	
-	test_multiplayer.multiplayer_peer = test_peer
-	
-	# Wait for connection result
-	var connection_timeout = 2.0  # 2 second timeout
-	var start_time = Time.get_unix_time_from_system()
-	
-	while Time.get_unix_time_from_system() - start_time < connection_timeout:
-		test_multiplayer.poll()
+	var error = GameState.create_client(ip_address)
+	if error == OK:
+		print("Connecting to " + ip_address)
+		DisplayServer.window_set_title("Client")
 		
-		if test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
-			test_peer.close()
-			_dev_start_client()
-			return
-		elif test_peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
-			test_peer.close()
-			_dev_start_server()
-			return
-		
-		await get_tree().process_frame
-	
-	# Timeout reached
-	test_peer.close()
-	_dev_start_server()
+		# Store IP for success/failure callbacks
+		if GameState.multiplayer_peer:
+			GameState.multiplayer_peer.set_meta("connecting_ip", ip_address)
+	else:
+		print("Failed to connect: " + error_string(error))
 
-func _dev_start_server():
-	var error = peer.create_server(PORT)
-	GameState.set_multiplayer_peer(peer, true)
-	print("Dev server started: " + error_string(error))
-	
-	DisplayServer.window_set_title("Dev Host")
-	
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	
-	_configure_local_player()
-	_store_local_player_pattern()
-	_create_health_ui()
-
-func _dev_start_client():
-	# Wait a moment for server to start up
-	await get_tree().create_timer(1.0).timeout
-	
-	var error = peer.create_client('127.0.0.1', PORT)
-	print("Dev client connecting: " + error_string(error))
-	
-	GameState.set_multiplayer_peer(peer, false)
-	DisplayServer.window_set_title("Dev Client")
-	
-	multiplayer.connected_to_server.connect(_on_connected_to_server)
+# Development functions removed - can be re-added if needed
 
 func _create_pattern_model_for_player(player_character):
 	if player_character and player_character.has_method("create_pattern_model"):
@@ -678,16 +464,16 @@ func _show_pattern_selection_overlay():
 
 func _on_pattern_selected():
 	# Called when player finishes selecting a pattern
-	# Update the player's pattern in our storage
+	# Update the player's pattern in GameState
 	var local_peer_id = multiplayer.get_unique_id()
-	player_patterns[local_peer_id] = GameState.colony.duplicate()
+	GameState.player_patterns[local_peer_id] = GameState.colony.duplicate()
 	
 	# Sync the new pattern with other players
 	if multiplayer.is_server():
 		for client_id in multiplayer.get_peers():
-			_sync_player_pattern.rpc_id(client_id, local_peer_id, player_patterns[local_peer_id])
+			GameState._sync_player_pattern.rpc_id(client_id, local_peer_id, GameState.player_patterns[local_peer_id])
 	else:
-		_sync_player_pattern.rpc_id(1, local_peer_id, player_patterns[local_peer_id])
+		GameState._sync_player_pattern.rpc_id(1, local_peer_id, GameState.player_patterns[local_peer_id])
 	
 	_hide_pattern_selection_overlay()
 	
@@ -722,15 +508,10 @@ func _restore_multiplayer_state():
 	# Restore multiplayer state after returning from pattern selection
 	print("Restoring multiplayer state...")
 	
-	# Reconnect signals that were lost during scene change
+	# Set window title based on host/client status
 	if GameState.is_host:
-		multiplayer.peer_connected.connect(_on_peer_connected)
-		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		DisplayServer.window_set_title("Host")
 	else:
-		multiplayer.connected_to_server.connect(_on_connected_to_server)
-		multiplayer.connection_failed.connect(_on_connection_failed)
-		multiplayer.server_disconnected.connect(_on_server_disconnected)
 		DisplayServer.window_set_title("Client")
 	
 	# Configure local player
@@ -742,8 +523,7 @@ func _restore_multiplayer_state():
 	if local_player and local_player.has_meta("in_pattern_selection"):
 		was_in_pattern_selection = local_player.get_meta("in_pattern_selection")
 	
-	# Store local player's pattern (updated from pattern selection)
-	_store_local_player_pattern()
+	# GameState handles pattern storage
 	
 	# If player was in pattern selection, keep them invisible and show overlay
 	if was_in_pattern_selection and local_player:
@@ -757,22 +537,23 @@ func _restore_multiplayer_state():
 	
 	# IMPORTANT: Send the updated pattern to other players AFTER recreating players
 	var local_peer_id = multiplayer.get_unique_id()
-	if player_patterns.has(local_peer_id):
-		print("DEBUG: Syncing updated pattern to other players. Pattern size: " + str(player_patterns[local_peer_id].size()))
+	var local_pattern = GameState.get_player_pattern(local_peer_id)
+	if local_pattern.size() > 0:
+		print("DEBUG: Syncing updated pattern to other players. Pattern size: " + str(local_pattern.size()))
 		# Sync new pattern to all other players
 		if GameState.is_host:
 			for client_id in multiplayer.get_peers():
-				_sync_player_pattern.rpc_id(client_id, local_peer_id, player_patterns[local_peer_id])
+				GameState._sync_player_pattern.rpc_id(client_id, local_peer_id, local_pattern)
 		else:
-			_sync_player_pattern.rpc_id(1, local_peer_id, player_patterns[local_peer_id])
+			GameState._sync_player_pattern.rpc_id(1, local_peer_id, local_pattern)
 	
 	# Request all patterns from other players and notify we're back
 	if GameState.is_host:
 		# If we're the host, tell other players we're back
-		_notify_player_returned.rpc()
+		GameState._notify_player_returned.rpc()
 	else:
 		# If we're a client, request current game state from server
-		_request_current_game_state.rpc_id(1)
+		GameState._request_current_game_state.rpc_id(1)
 	
 	# Give a moment for network sync, then update our own model
 	await get_tree().create_timer(0.1).timeout
@@ -800,43 +581,7 @@ func _recreate_remote_players():
 			print("Creating remote player for peer: " + str(peer_id))
 			_add_remote_player_character(peer_id)
 
-@rpc("any_peer", "call_local")
-func _notify_player_returned():
-	# Called when a player returns from pattern selection
-	var sender_id = multiplayer.get_remote_sender_id()
-	print("Player " + str(sender_id) + " returned from pattern selection")
-	
-	# If we don't have this player as a remote, add them
-	if not remote_player_dictionary.has(sender_id):
-		_add_remote_player_character(sender_id)
-	else:
-		# Update their pattern model with the latest pattern
-		_update_player_pattern_model(sender_id)
-
-@rpc("any_peer", "call_remote")
-func _request_current_game_state():
-	# Server sends current game state to the requesting client
-	var requester_id = multiplayer.get_remote_sender_id()
-	print("Sending current game state to peer: " + str(requester_id))
-	
-	# Send list of all connected players
-	var connected_peers = multiplayer.get_peers()
-	_sync_connected_players.rpc_id(requester_id, connected_peers)
-	
-	# Send all stored patterns
-	for stored_peer_id in player_patterns.keys():
-		if str(stored_peer_id) != "local_pattern":  # Don't sync temporary pattern
-			_sync_player_pattern.rpc_id(requester_id, stored_peer_id, player_patterns[stored_peer_id])
-
-@rpc("any_peer", "call_remote")
-func _sync_connected_players(connected_peers: Array):
-	# Receive list of connected players and create remote players for them
-	print("Received connected players list: " + str(connected_peers))
-	
-	for peer_id in connected_peers:
-		if peer_id != multiplayer.get_unique_id() and not remote_player_dictionary.has(peer_id):
-			print("Adding missing remote player: " + str(peer_id))
-			_add_remote_player_character(peer_id)
+# RPC functions have been moved to GameState
 
 # Note: Removed _notify_player_pattern_selection - no longer needed since respawn timer is properly managed via _sync_health
 
