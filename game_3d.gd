@@ -564,7 +564,6 @@ func _restore_multiplayer_state():
 	var local_peer_id = multiplayer.get_unique_id()
 	var local_pattern = GameState.get_player_pattern(local_peer_id)
 	if local_pattern.size() > 0:
-		print("DEBUG: Syncing updated pattern to other players. Pattern size: " + str(local_pattern.size()))
 		# Sync new pattern to all other players
 		if GameState.is_host:
 			for client_id in multiplayer.get_peers():
@@ -584,7 +583,6 @@ func _restore_multiplayer_state():
 	await get_tree().create_timer(0.1).timeout
 	if local_player_ref and local_player_ref.has_method("create_pattern_model"):
 		local_player_ref.create_pattern_model()
-		print("DEBUG: Updated local player pattern model after restoration")
 
 func _recreate_remote_players():
 	# Recreate remote player characters for all connected peers

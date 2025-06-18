@@ -202,12 +202,13 @@ func _physics_process(delta : float):
 	# Handle healing (for testing) - Enter key
 	if Input.is_action_just_pressed("ui_accept") and not is_dead:  # Using ui_accept (Enter) for now
 		heal(25.0)  # Heal 25 HP
-		print("DEBUG: Manual heal triggered - Health: " + str(current_health))
 	
 	# Handle manual damage (for testing) - P key  
 	if Input.is_action_just_pressed("ui_cancel") and not is_dead:  # Using ui_cancel (Escape) for now
 		take_damage(25.0, -1)  # Take 25 damage
-		print("DEBUG: Manual damage triggered - Health: " + str(current_health))
+	
+	# Debug movement for Claude Code testing
+	_handle_debug_movement(delta)
 	
 	# Handle shooting with cooldown and just_pressed requirement (but not if dead)
 	if get_input_just_pressed(shootAction) and not is_dead:
@@ -245,7 +246,6 @@ func _physics_process(delta : float):
 					cell_3d.contact_monitor = true  # Enable contact monitoring
 					cell_3d.max_contacts_reported = 10  # Allow multiple contact reports
 					
-					print("DEBUG: Created bullet with contact_monitor: " + str(cell_3d.contact_monitor))
 					
 					# Add to scene AFTER configuring physics
 					Game3D.add_child(cell_3d)
@@ -254,13 +254,10 @@ func _physics_process(delta : float):
 					cell_3d.collision_layer = 256  # Layer 8 (2^8 = 256) - bullets
 					cell_3d.collision_mask = 1 + 2 + 4 + 256  # Layers 1,2,3,8 (environment + players + bullets)
 					
-					print("DEBUG: Player collision layer: " + str(self.collision_layer))
-					print("DEBUG: Bullet collision mask: " + str(cell_3d.collision_mask))
 					
 					# Ensure collision signals are connected (backup in case Cell3D._ready doesn't work)
 					if not cell_3d.body_entered.is_connected(cell_3d._on_body_entered):
 						cell_3d.body_entered.connect(cell_3d._on_body_entered)
-						print("DEBUG: Manually connected body_entered signal")
 					
 					# Store reference to owner player for collision checking
 					cell_3d.set_meta("owner_peer_id", player_peer_id)
@@ -301,7 +298,6 @@ func _physics_process(delta : float):
 					var final_position = self.position + board_offset + rotated_position
 					cell_3d.position = final_position
 					
-					print("DEBUG: Spawning bullet at position: " + str(final_position) + " for player at: " + str(self.position))
 					
 					# Rotate the cell to match character's orientation
 					cell_3d.transform.basis = camera_transform.basis
@@ -310,7 +306,6 @@ func _physics_process(delta : float):
 					var forward_direction = -camera_transform.basis.z  # Forward is negative Z
 					cell_3d.linear_velocity = forward_direction * scaled_velocity
 					
-					print("DEBUG: Bullet velocity: " + str(cell_3d.linear_velocity))
 					
 					# Add bullet cleanup timer to prevent infinite bullets
 					cell_3d.set_meta("spawn_time", Time.get_unix_time_from_system())
@@ -956,7 +951,6 @@ func take_damage(damage: float, source_player_id: int = -1):
 	
 	# Check if player died
 	if current_health <= 0.0 and not is_dead:
-		print("DEBUG: Player died!")
 		_handle_death(source_player_id)
 	
 	# Sync health across network for remote players
@@ -973,7 +967,6 @@ func _sync_health(new_health: float, dead: bool):
 		respawn_timer = 0.0
 		# Clear visual pattern model when player dies (for remote players)
 		clear_pattern_model()
-		print("DEBUG: Player " + str(player_peer_id) + " died via health sync - respawn timer reset")
 	
 	health_changed.emit(current_health, max_health)
 
@@ -1029,7 +1022,6 @@ func _transition_to_pattern_selection():
 	
 	# Mark player as in pattern selection mode IMMEDIATELY (locally first, then sync)
 	set_meta("in_pattern_selection", true)
-	print("DEBUG: Player " + str(player_peer_id) + " entering pattern selection mode")
 	
 	# Note: No need to sync pattern selection state anymore since respawn timer is properly managed
 	
@@ -1052,8 +1044,6 @@ func _handle_respawn():
 	if not is_dead:
 		return
 	
-	print("DEBUG: _handle_respawn called for player " + str(player_peer_id) + " (is_remote: " + str(is_remote) + ") - in_pattern_selection: " + str(has_meta("in_pattern_selection") and get_meta("in_pattern_selection")))
-	print("DEBUG: Call stack: " + str(get_stack()))
 	
 	# Check if this is a local player in pattern selection - should not respawn
 	if not is_remote and has_meta("in_pattern_selection") and get_meta("in_pattern_selection"):
@@ -1104,10 +1094,8 @@ func _set_pattern_selection_mode(in_selection: bool):
 func _request_respawn(immediate: bool = true):
 	# Called when a player chooses to respawn
 	if not is_dead:
-		print("DEBUG: _request_respawn called but player is not dead - ignoring")
 		return
 	
-	print("DEBUG: Player " + str(player_peer_id) + " requested respawn (immediate: " + str(immediate) + ") - called from: " + str(get_stack()))
 	
 	if immediate:
 		# Respawn immediately
@@ -1115,7 +1103,6 @@ func _request_respawn(immediate: bool = true):
 	else:
 		# Start respawn timer (for delayed respawn if needed)
 		respawn_timer = respawn_delay
-		print("DEBUG: Started respawn timer for player " + str(player_peer_id))
 
 func _exit_pattern_selection():
 	# Called when player finishes pattern selection and wants to respawn
@@ -1145,4 +1132,96 @@ func _prevent_bullet_self_collision(new_bullet: RigidBody3D, owner_id: int):
 				bullets_found += 1
 	
 	if bullets_found > 0:
-		print("DEBUG: Added collision exceptions between new bullet and " + str(bullets_found) + " existing bullets from player " + str(owner_id))
+		pass  # Collision exceptions added
+
+# === DEBUG MOVEMENT FUNCTIONS FOR CLAUDE CODE ===
+
+var debug_movement_enabled = false
+var debug_move_speed = 5.0
+var debug_auto_move_target: Vector3 = Vector3.ZERO
+var debug_auto_move_active = false
+
+func _handle_debug_movement(delta: float):
+	# Allow external control of movement for testing
+	if debug_auto_move_active and not is_dead:
+		_move_towards_target(debug_auto_move_target, delta)
+	
+	# Numpad controls for direct movement (only if not remote and not dead)
+	if not is_remote and not is_dead and debug_movement_enabled:
+		var move_vector = Vector3.ZERO
+		
+		# Numpad movement (8=forward, 2=back, 4=left, 6=right, 7=up, 1=down)
+		if Input.is_key_pressed(KEY_KP_8):  # Numpad 8 - Forward
+			move_vector.z -= 1.0
+		if Input.is_key_pressed(KEY_KP_2):  # Numpad 2 - Backward  
+			move_vector.z += 1.0
+		if Input.is_key_pressed(KEY_KP_4):  # Numpad 4 - Left
+			move_vector.x -= 1.0
+		if Input.is_key_pressed(KEY_KP_6):  # Numpad 6 - Right
+			move_vector.x += 1.0
+		if Input.is_key_pressed(KEY_KP_7):  # Numpad 7 - Up
+			move_vector.y += 1.0
+		if Input.is_key_pressed(KEY_KP_1):  # Numpad 1 - Down
+			move_vector.y -= 1.0
+		
+		if move_vector != Vector3.ZERO:
+			move_vector = move_vector.normalized()
+			position += move_vector * debug_move_speed * delta
+
+func _move_towards_target(target: Vector3, delta: float):
+	var direction = (target - position).normalized()
+	var distance = position.distance_to(target)
+	
+	if distance > 0.5:  # Move if more than 0.5 units away
+		var move_distance = min(debug_move_speed * delta, distance)
+		position += direction * move_distance
+	else:
+		debug_auto_move_active = false
+
+# === EXTERNAL CONTROL API FOR CLAUDE CODE ===
+
+func claude_move_to(target_position: Vector3):
+	"""Move player to specific world position"""
+	debug_auto_move_target = target_position
+	debug_auto_move_active = true
+
+func claude_teleport_to(target_position: Vector3):
+	"""Instantly teleport player to position"""
+	position = target_position
+	velocity = Vector3.ZERO
+
+func claude_move_relative(offset: Vector3):
+	"""Move player by relative offset"""
+	claude_move_to(position + offset)
+
+func claude_set_move_speed(speed: float):
+	"""Set debug movement speed"""
+	debug_move_speed = speed
+
+func claude_enable_debug_movement(enabled: bool = true):
+	"""Enable/disable numpad debug movement controls"""
+	debug_movement_enabled = enabled
+
+func claude_stop_movement():
+	"""Stop any automatic movement"""
+	debug_auto_move_active = false
+	velocity = Vector3.ZERO
+
+func claude_get_position() -> Vector3:
+	"""Get current player position"""
+	return position
+
+func claude_get_status() -> Dictionary:
+	"""Get comprehensive player status for debugging"""
+	return {
+		"position": position,
+		"velocity": velocity,
+		"health": current_health,
+		"is_dead": is_dead,
+		"is_remote": is_remote,
+		"player_peer_id": player_peer_id,
+		"debug_movement_enabled": debug_movement_enabled,
+		"debug_auto_move_active": debug_auto_move_active,
+		"debug_auto_move_target": debug_auto_move_target,
+		"state": state_machine.curr_state_name if state_machine else "unknown"
+	}

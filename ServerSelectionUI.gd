@@ -152,7 +152,6 @@ func _on_refresh_pressed():
 func _on_cancel_pressed():
 	# If scanning is in progress, cancel it
 	if scanning_label.visible:
-		print("DEBUG: User clicked cancel - setting scan_cancelled flag")
 		scan_cancelled = true
 		scanning_label.text = "Scan cancelled by user"
 		log_scan_attempt("SCAN", "CANCELLED by user")
@@ -161,8 +160,6 @@ func _on_cancel_pressed():
 	cancelled.emit()
 
 func is_scan_cancelled() -> bool:
-	if scan_cancelled:
-		print("DEBUG: is_scan_cancelled() returning true")
 	return scan_cancelled
 
 func cancel_scan():

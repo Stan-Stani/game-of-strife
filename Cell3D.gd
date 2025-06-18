@@ -11,7 +11,6 @@ func _ready():
 			add_collision_exception_with(owner_player)
 	
 	# Connect collision signals for better response
-	print("DEBUG: Cell3D _ready - contact_monitor: " + str(contact_monitor))
 	if contact_monitor:
 		body_entered.connect(_on_body_entered)
 		body_exited.connect(_on_body_exited)
