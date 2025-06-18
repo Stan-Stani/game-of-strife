@@ -136,6 +136,36 @@ tasklist.exe | grep -i godot
 This is especially important after running multiple test sessions to prevent resource issues.
 
 ### Claude Code Player Control API
+
+#### Multiple Command File System
+Different players can be controlled independently using separate command files:
+
+**Command File Types:**
+- `claude_commands.txt` - Shared by all instances (default)
+- `claude_commands_host.txt` - Only read by the host player
+- `claude_commands_client.txt` - Only read by client players
+- `claude_commands_1.txt` through `claude_commands_4.txt` - Read by specific peer IDs (1-4 only)
+
+**Usage Examples:**
+```bash
+# Control only the host player
+echo "walk forward 3" > claude_commands_host.txt
+
+# Control only client players
+echo "jump" > claude_commands_client.txt
+
+# Control all connected players
+echo "list" > claude_commands.txt
+```
+
+**How It Works:**
+- Each game instance monitors different sets of command files based on its multiplayer role
+- Commands are automatically processed and cleared from files after execution
+- Host monitors: default + host-specific + peer ID files
+- Clients monitor: default + client-specific + peer ID files
+- Allows independent control of different players in multiplayer sessions
+
+#### Player Control Commands
 For testing and debugging, players have programmatic movement controls available:
 
 #### Godot Console Commands (F4 to open console)

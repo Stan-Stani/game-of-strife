@@ -776,36 +776,89 @@ func _simulate_run(direction: String, duration: float, player_index: int = 0):
 
 # === CLAUDE CODE COMMAND LISTENER ===
 
-var claude_command_file_path = "claude_commands.txt"
+var claude_command_file_paths = [
+	"claude_commands.txt",       # Default/shared commands
+	"claude_commands_host.txt",  # Host-specific commands
+	"claude_commands_client.txt", # Client-specific commands
+	"claude_commands_1.txt",     # Player 1 specific
+	"claude_commands_2.txt",     # Player 2 specific
+	"claude_commands_3.txt",     # Player 3 specific
+	"claude_commands_4.txt"      # Player 4 specific
+]
 var claude_last_command_time = 0.0
+var processed_commands = {}  # Track processed commands per file
 
 func _start_claude_command_listener():
-	print("Claude Code command listener started - watching: " + claude_command_file_path)
+	# Determine which command files this instance should watch
+	var files_to_watch = ["claude_commands.txt"]  # Always watch the default
+	
+	# Add role-specific file
+	if multiplayer.is_server():
+		files_to_watch.append("claude_commands_host.txt")
+	else:
+		files_to_watch.append("claude_commands_client.txt")
+	
+	# Add player ID specific file (peer ID based)
+	var peer_id = multiplayer.get_unique_id()
+	if peer_id <= 4:  # Support up to 4 players
+		files_to_watch.append("claude_commands_" + str(peer_id) + ".txt")
+	
+	print("Claude Code command listener started - watching: " + str(files_to_watch))
 
 
 func _check_claude_commands():
-	# Check if command file exists and read it
-	var file = FileAccess.open(claude_command_file_path, FileAccess.READ)
-	if file == null:
-		return
+	# Get list of files to check based on instance role
+	var files_to_check = _get_command_files_to_watch()
 	
-	var content = file.get_as_text().strip_edges()
-	file.close()
-	
-	if content.length() == 0:
-		return
-	
-	# Clear the file after reading
-	var clear_file = FileAccess.open(claude_command_file_path, FileAccess.WRITE)
-	if clear_file:
-		clear_file.store_string("")
-		clear_file.close()
-	
-	# Parse and execute the command
-	_execute_claude_command(content)
+	for file_path in files_to_check:
+		# Check if command file exists and read it
+		var file = FileAccess.open(file_path, FileAccess.READ)
+		if file == null:
+			continue
+		
+		var content = file.get_as_text().strip_edges()
+		var file_mod_time = file.get_modified_time(file_path)
+		file.close()
+		
+		if content.length() == 0:
+			continue
+		
+		# Check if we've already processed this command
+		var command_key = file_path + ":" + content + ":" + str(file_mod_time)
+		if processed_commands.has(command_key):
+			continue
+		
+		# Mark as processed
+		processed_commands[command_key] = Time.get_unix_time_from_system()
+		
+		# Clear the file after reading
+		var clear_file = FileAccess.open(file_path, FileAccess.WRITE)
+		if clear_file:
+			clear_file.store_string("")
+			clear_file.close()
+		
+		# Parse and execute the command
+		print("Processing command from " + file_path + ": " + content)
+		_execute_claude_command(content, file_path)
 
-func _execute_claude_command(command: String):
-	print("Executing Claude command: " + command)
+func _get_command_files_to_watch() -> Array:
+	var files = ["claude_commands.txt"]  # Always watch default
+	
+	# Add role-specific file based on current multiplayer state
+	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
+		files.append("claude_commands_host.txt")
+	elif multiplayer.has_multiplayer_peer():
+		files.append("claude_commands_client.txt")
+	
+	# Add peer ID specific file
+	if multiplayer.has_multiplayer_peer():
+		var peer_id = multiplayer.get_unique_id()
+		files.append("claude_commands_" + str(peer_id) + ".txt")
+	
+	return files
+
+func _execute_claude_command(command: String, source_file: String = ""):
+	print("Executing Claude command: " + command + ((" from " + source_file) if source_file != "" else ""))
 	
 	var parts = command.split(" ")
 	if parts.size() == 0:
