@@ -90,6 +90,19 @@ godot --headless --test-local-multiplayer
 godot --port 3007                    # Use custom port
 godot --debug-multiplayer            # Enable debug logging
 godot --skip-2d                      # Skip 2D editor, go to 3D
+
+# Quick testing with predefined patterns
+godot --pattern glider               # Load glider pattern and start
+godot --pattern block                # Load block pattern and start
+godot --pattern blinker              # Load blinker pattern and start
+godot --pattern toad                 # Load toad pattern and start
+godot --pattern beacon               # Load beacon pattern and start
+godot --pattern pulsar               # Load pulsar pattern and start
+
+# Instant multiplayer setup
+godot --auto-host                    # Start as host with glider pattern
+godot --auto-client                  # Connect to localhost with block pattern
+godot --auto-client 192.168.1.100   # Connect to specific IP with block pattern
 ```
 
 #### Automated Testing Script
@@ -175,6 +188,44 @@ When debug movement is enabled, use numpad keys for direct control:
 - **Numpad 1**: Move down (negative Y)
 
 These controls work in addition to normal WASD movement and are useful for precise positioning during testing.
+
+## Quick Start Commands
+
+For rapid testing and development, use these command line options to skip the 2D editor and start directly in 3D with predefined patterns:
+
+### Pattern Loading
+```bash
+# Load specific Conway's Game of Life patterns
+godot --pattern glider     # Classic 5-cell glider
+godot --pattern block      # Stable 4-cell block  
+godot --pattern blinker    # Oscillating 3-cell pattern
+godot --pattern toad       # 6-cell period-2 oscillator
+godot --pattern beacon     # 6-cell period-2 oscillator
+godot --pattern pulsar     # Large 24-cell period-3 oscillator
+```
+
+### Instant Multiplayer Setup
+```bash
+# Start as host with glider pattern
+godot --auto-host
+
+# Connect as client with block pattern
+godot --auto-client                    # Connects to localhost
+godot --auto-client 192.168.1.100     # Connects to specific IP
+```
+
+### Combined Usage Examples
+```bash
+# Host with specific pattern
+godot --pattern pulsar --host
+
+# Client with specific pattern connecting to host
+godot --pattern beacon --client 192.168.1.100
+
+# Testing multiplayer locally (run in separate terminals)
+Terminal 1: godot --auto-host
+Terminal 2: godot --auto-client
+```
 
 ## Technical Notes
 

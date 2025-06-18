@@ -267,6 +267,29 @@ func _handle_command_line_args():
 			"--skip-2d":
 				print("Skipping 2D mode, going directly to 3D")
 				call_deferred("_skip_to_3d")
+			
+			"--pattern":
+				if i + 1 < args.size():
+					var pattern_name = args[i + 1]
+					print("Loading predefined pattern: " + pattern_name)
+					call_deferred("_load_pattern_and_start", pattern_name)
+					i += 1
+				else:
+					print("Error: --pattern requires pattern name (glider, block, blinker, toad)")
+			
+			"--auto-host":
+				print("Auto-starting as host with default pattern")
+				call_deferred("_auto_host_with_pattern")
+			
+			"--auto-client":
+				if i + 1 < args.size():
+					var ip = args[i + 1]
+					print("Auto-connecting as client to: " + ip)
+					call_deferred("_auto_client_with_pattern", ip)
+					i += 1
+				else:
+					print("Auto-connecting as client to localhost")
+					call_deferred("_auto_client_with_pattern", "127.0.0.1")
 		
 		i += 1
 
@@ -300,4 +323,92 @@ func _test_local_multiplayer():
 func _skip_to_3d():
 	# Skip directly to 3D mode with empty colony
 	GameState.colony = {}
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+
+func _get_predefined_pattern(pattern_name: String) -> Dictionary:
+	"""Get a predefined Conway's Game of Life pattern"""
+	match pattern_name.to_lower():
+		"glider":
+			return {
+				Vector2(1, 0): true,
+				Vector2(2, 1): true,
+				Vector2(0, 2): true,
+				Vector2(1, 2): true,
+				Vector2(2, 2): true
+			}
+		"block":
+			return {
+				Vector2(0, 0): true,
+				Vector2(1, 0): true,
+				Vector2(0, 1): true,
+				Vector2(1, 1): true
+			}
+		"blinker":
+			return {
+				Vector2(0, 1): true,
+				Vector2(1, 1): true,
+				Vector2(2, 1): true
+			}
+		"toad":
+			return {
+				Vector2(1, 1): true,
+				Vector2(2, 1): true,
+				Vector2(3, 1): true,
+				Vector2(0, 2): true,
+				Vector2(1, 2): true,
+				Vector2(2, 2): true
+			}
+		"beacon":
+			return {
+				Vector2(0, 0): true,
+				Vector2(1, 0): true,
+				Vector2(0, 1): true,
+				Vector2(3, 2): true,
+				Vector2(2, 3): true,
+				Vector2(3, 3): true
+			}
+		"pulsar":
+			# A larger oscillating pattern
+			var pattern = {}
+			# Top part
+			for x in range(2, 5):
+				pattern[Vector2(x, 0)] = true
+				pattern[Vector2(x, 5)] = true
+				pattern[Vector2(x, 7)] = true
+				pattern[Vector2(x, 12)] = true
+			# Sides
+			for y in range(2, 5):
+				pattern[Vector2(0, y)] = true
+				pattern[Vector2(5, y)] = true
+				pattern[Vector2(7, y)] = true
+				pattern[Vector2(12, y)] = true
+			return pattern
+		_:
+			print("Unknown pattern: " + pattern_name + ". Using glider.")
+			return _get_predefined_pattern("glider")
+
+func _load_pattern_and_start(pattern_name: String):
+	"""Load a predefined pattern and start the game directly in 3D"""
+	var pattern = _get_predefined_pattern(pattern_name)
+	grids.active = pattern
+	GameState.colony = pattern
+	print("Loaded " + pattern_name + " pattern with " + str(pattern.size()) + " cells")
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+
+func _auto_host_with_pattern():
+	"""Start as host with a default glider pattern"""
+	var pattern = _get_predefined_pattern("glider")
+	grids.active = pattern
+	GameState.colony = pattern
+	GameState.set_meta("auto_start_server", true)
+	print("Starting as host with glider pattern")
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+
+func _auto_client_with_pattern(ip: String):
+	"""Connect as client with a default block pattern"""
+	var pattern = _get_predefined_pattern("block")
+	grids.active = pattern
+	GameState.colony = pattern
+	GameState.set_meta("auto_connect_ip", ip)
+	print("Connecting as client to " + ip + " with block pattern")
 	get_tree().change_scene_to_file("res://Game3D.tscn")
