@@ -69,6 +69,113 @@ godot project.godot         # Open in editor
 godot -- project.godot      # Run game directly
 ```
 
+### Command Line Multiplayer Testing
+The game supports command line arguments for automated multiplayer testing:
+
+```bash
+# Start server (host mode)
+godot --host
+
+# Connect as client to specific IP
+godot --client 127.0.0.1
+godot --client 192.168.1.100
+
+# Run network diagnostics
+godot --headless --test-network
+
+# Test local multiplayer setup
+godot --headless --test-local-multiplayer
+
+# Additional options
+godot --port 3007                    # Use custom port
+godot --debug-multiplayer            # Enable debug logging
+godot --skip-2d                      # Skip 2D editor, go to 3D
+```
+
+#### Automated Testing Script
+Use the included test script for easier testing with timeouts:
+```bash
+# Test complete server-client connection
+./test_multiplayer.sh test-connection
+
+# Start headless server
+./test_multiplayer.sh server
+
+# Connect as client
+./test_multiplayer.sh client [ip_address]
+
+# Run network tests
+./test_multiplayer.sh network-test
+```
+
+#### Cleaning Up Background Processes
+**IMPORTANT**: When testing multiplayer via command line, background Godot processes may accumulate. Always clean them up:
+
+```bash
+# Kill all Godot processes on Windows (from WSL)
+taskkill.exe /F /IM godot.exe
+taskkill.exe /F /IM "Godot_v4.4.1-stable_win64.exe"
+
+# Check for remaining processes
+tasklist.exe | grep -i godot
+```
+
+This is especially important after running multiple test sessions to prevent resource issues.
+
+### Claude Code Player Control API
+For testing and debugging, players have programmatic movement controls available:
+
+#### Godot Console Commands (F4 to open console)
+```gdscript
+# List all available players
+Game3D.claude_list_players()
+
+# Get player status
+Game3D.claude_get_player_status(0)  # 0 = local player, 1+ = remote players
+
+# Move player to specific position (smoothly)
+Game3D.claude_move_player_to(Vector3(10, 0, 5), 0)
+
+# Teleport player instantly
+Game3D.claude_teleport_player_to(Vector3(0, 0, 0), 0)
+
+# Enable numpad movement controls (8=forward, 2=back, 4=left, 6=right, 7=up, 1=down)
+Game3D.claude_enable_player_debug_movement(true, 0)
+
+# Run automated movement test
+Game3D.claude_test_movement()
+```
+
+#### Direct Player Control (if you have player reference)
+```gdscript
+var player = Game3D.claude_get_local_player()
+
+# Movement commands
+player.claude_move_to(Vector3(5, 0, 0))        # Move to position
+player.claude_teleport_to(Vector3(0, 0, 0))   # Instant teleport
+player.claude_move_relative(Vector3(0, 0, 5))  # Move by offset
+player.claude_stop_movement()                  # Stop current movement
+
+# Configuration
+player.claude_set_move_speed(10.0)            # Set movement speed
+player.claude_enable_debug_movement(true)     # Enable numpad controls
+
+# Status
+var pos = player.claude_get_position()        # Get current position
+var status = player.claude_get_status()       # Get full status dict
+```
+
+#### Manual Numpad Controls
+When debug movement is enabled, use numpad keys for direct control:
+- **Numpad 8**: Move forward (negative Z)
+- **Numpad 2**: Move backward (positive Z)  
+- **Numpad 4**: Move left (negative X)
+- **Numpad 6**: Move right (positive X)
+- **Numpad 7**: Move up (positive Y)
+- **Numpad 1**: Move down (negative Y)
+
+These controls work in addition to normal WASD movement and are useful for precise positioning during testing.
+
 ## Technical Notes
 
 - Cell size constant: 64.0 pixels (main.gd:18)
@@ -78,3 +185,10 @@ godot -- project.godot      # Run game directly
 
 ## Known Issues
 - Canceling scan still not working
+
+## Important Development Notes
+- When running the game from command line, always redirect output to a log file to avoid blocking:
+  ```bash
+  nohup /mnt/c/ProgramData/chocolatey/bin/godot.exe -- project.godot > godot_output.log 2>&1 &
+  ```
+  This allows you to check the console output periodically with `tail -f godot_output.log`

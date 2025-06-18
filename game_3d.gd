@@ -31,13 +31,33 @@ func _ready():
 	
 	# Don't spawn local player here - wait for multiplayer connection
 	
-	# Auto-connect for development
-	# _check_dev_auto_connect()
+	# Handle command line auto-connections
+	_check_command_line_actions()
+	
+	# Start listening for Claude Code movement commands
+	_start_claude_command_listener()
 	
 	
 var HealthUI = preload("res://HealthUI.tscn")
 var health_ui_instance = null
 func _process(_delta: float) -> void:
+	# Check claude commands
+	_check_claude_commands()
+	
+	# Maintain simulated inputs
+	for key in simulated_inputs:
+		if simulated_inputs[key]:
+			var parts = key.split("_")
+			if parts.size() >= 3:
+				var action = parts[2]
+				# For actions that need more parts
+				for i in range(3, parts.size()):
+					action += "_" + parts[i]
+				
+				# Keep the action pressed
+				if not Input.is_action_pressed(action):
+					Input.action_press(action)
+	
 	# Handle pattern selection mode inputs (but don't return early)
 	if pattern_selection_overlay != null:
 		if Input.is_action_just_pressed("ragdoll"):  # 'R' key
@@ -50,6 +70,11 @@ func _process(_delta: float) -> void:
 			if local_player and local_player.has_method("_request_respawn"):
 				local_player._request_respawn.rpc(true)
 				_hide_pattern_selection_overlay()
+	
+	# Check for Claude Code commands every 0.1 seconds
+	if Time.get_unix_time_from_system() - claude_last_command_time > 0.1:
+		claude_last_command_time = Time.get_unix_time_from_system()
+		_check_claude_commands()
 	
 	if Input.is_action_just_pressed("be_server"):
 		var error = GameState.create_server()
@@ -585,6 +610,312 @@ func _recreate_remote_players():
 
 # Note: Removed _notify_player_pattern_selection - no longer needed since respawn timer is properly managed via _sync_health
 
+# === CLAUDE CODE PLAYER CONTROL API ===
+
+func claude_get_local_player():
+	"""Get reference to the local player character"""
+	return get_local_player()
+
+func claude_get_all_players() -> Array:
+	"""Get references to all player characters (local and remote)"""
+	var players = []
+	
+	# Add local player
+	var local_player = get_local_player()
+	if local_player:
+		players.append(local_player)
+	
+	# Add remote players
+	for peer_id in remote_player_dictionary:
+		if remote_player_dictionary[peer_id]:
+			players.append(remote_player_dictionary[peer_id])
+	
+	return players
+
+func claude_move_player_to(target: Vector3, player_index: int = 0):
+	"""Move a player to specific position (0 = local player, 1+ = remote players)"""
+	var players = claude_get_all_players()
+	if player_index < players.size():
+		var player = players[player_index]
+		if player.has_method("claude_move_to"):
+			player.claude_move_to(target)
+			print("Claude moving player " + str(player_index) + " to " + str(target))
+		else:
+			print("Player doesn't support Claude movement API")
+	else:
+		print("Player index " + str(player_index) + " not found. Available players: " + str(players.size()))
+
+func claude_teleport_player_to(target: Vector3, player_index: int = 0):
+	"""Teleport a player to specific position"""
+	var players = claude_get_all_players()
+	if player_index < players.size():
+		var player = players[player_index]
+		if player.has_method("claude_teleport_to"):
+			player.claude_teleport_to(target)
+			print("Claude teleported player " + str(player_index) + " to " + str(target))
+
+func claude_get_player_status(player_index: int = 0) -> Dictionary:
+	"""Get comprehensive status of a player"""
+	var players = claude_get_all_players()
+	if player_index < players.size():
+		var player = players[player_index]
+		if player.has_method("claude_get_status"):
+			return player.claude_get_status()
+		else:
+			return {"error": "Player doesn't support status API"}
+	else:
+		return {"error": "Player index not found", "available_players": players.size()}
+
+func claude_enable_player_debug_movement(enabled: bool = true, player_index: int = 0):
+	"""Enable debug movement controls for a player"""
+	var players = claude_get_all_players()
+	if player_index < players.size():
+		var player = players[player_index]
+		if player.has_method("claude_enable_debug_movement"):
+			player.claude_enable_debug_movement(enabled)
+
+func claude_list_players():
+	"""Print info about all available players"""
+	var players = claude_get_all_players()
+	print("=== Available Players ===")
+	for i in range(players.size()):
+		var player = players[i]
+		var is_local = (player == get_local_player())
+		var pos = player.position if player else Vector3.ZERO
+		var health = player.current_health if player and "current_health" in player else "unknown"
+		print("Player " + str(i) + ": " + ("LOCAL" if is_local else "REMOTE") + " at " + str(pos) + " (Health: " + str(health) + ")")
+
+func claude_test_movement():
+	"""Run a simple movement test with the local player"""
+	var local_player = claude_get_local_player()
+	if local_player:
+		print("Starting Claude movement test...")
+		
+		# Enable debug movement
+		claude_enable_player_debug_movement(true, 0)
+		
+		# Get starting position
+		var start_pos = local_player.claude_get_position()
+		print("Starting position: " + str(start_pos))
+		
+		# Move to a few different positions
+		await get_tree().create_timer(1.0).timeout
+		claude_move_player_to(start_pos + Vector3(5, 0, 0), 0)
+		
+		await get_tree().create_timer(3.0).timeout
+		claude_move_player_to(start_pos + Vector3(0, 0, 5), 0)
+		
+		await get_tree().create_timer(3.0).timeout
+		claude_teleport_player_to(start_pos, 0)
+		
+		print("Claude movement test completed!")
+	else:
+		print("No local player found for movement test")
+
+# === INPUT SIMULATION FUNCTIONS ===
+
+var simulated_inputs = {}  # Track which inputs are being simulated per player
+
+func _simulate_player_input(action: String, pressed: bool, player_index: int = 0):
+	"""Simulate input for a specific player"""
+	var players = claude_get_all_players()
+	if player_index >= players.size():
+		print("Player index " + str(player_index) + " not found")
+		return
+	
+	var player = players[player_index]
+	if player_index == 0 and not player.is_remote:
+		# For local player, we need to simulate actual input events
+		var key = "player_" + str(player_index) + "_" + action
+		
+		if pressed:
+			simulated_inputs[key] = true
+			# Immediately trigger the action
+			Input.action_press(action)
+		else:
+			simulated_inputs.erase(key)
+			Input.action_release(action)
+		
+		# Get player position before and after
+		var pos_before = player.claude_get_position() if player.has_method("claude_get_position") else player.position
+		print("Simulating input '" + action + "' = " + str(pressed) + " for player " + str(player_index) + " at position " + str(pos_before))
+	else:
+		print("Cannot simulate input for remote players")
+
+func _simulate_walk(direction: String, duration: float, player_index: int = 0):
+	"""Simulate walking in a direction for a duration"""
+	var action = ""
+	match direction:
+		"forward": action = "move_forward"
+		"back", "backward": action = "move_backward"
+		"left": action = "move_left"
+		"right": action = "move_right"
+		_:
+			print("Invalid direction: " + direction)
+			return
+	
+	_simulate_player_input(action, true, player_index)
+	
+	# Stop after duration
+	get_tree().create_timer(duration).timeout.connect(func():
+		_simulate_player_input(action, false, player_index)
+	)
+
+func _simulate_run(direction: String, duration: float, player_index: int = 0):
+	"""Simulate running in a direction for a duration"""
+	# First press run action
+	_simulate_player_input("run", true, player_index)
+	
+	# Then walk in direction
+	_simulate_walk(direction, duration, player_index)
+	
+	# Release run after duration
+	get_tree().create_timer(duration).timeout.connect(func():
+		_simulate_player_input("run", false, player_index)
+	)
+
+# (Removed duplicate _process - merged into main _process above)
+
+# === CLAUDE CODE COMMAND LISTENER ===
+
+var claude_command_file_path = "claude_commands.txt"
+var claude_last_command_time = 0.0
+
+func _start_claude_command_listener():
+	print("Claude Code command listener started - watching: " + claude_command_file_path)
+
+
+func _check_claude_commands():
+	# Check if command file exists and read it
+	var file = FileAccess.open(claude_command_file_path, FileAccess.READ)
+	if file == null:
+		return
+	
+	var content = file.get_as_text().strip_edges()
+	file.close()
+	
+	if content.length() == 0:
+		return
+	
+	# Clear the file after reading
+	var clear_file = FileAccess.open(claude_command_file_path, FileAccess.WRITE)
+	if clear_file:
+		clear_file.store_string("")
+		clear_file.close()
+	
+	# Parse and execute the command
+	_execute_claude_command(content)
+
+func _execute_claude_command(command: String):
+	print("Executing Claude command: " + command)
+	
+	var parts = command.split(" ")
+	if parts.size() == 0:
+		return
+	
+	var cmd = parts[0].to_lower()
+	
+	match cmd:
+		"teleport", "tp":
+			if parts.size() >= 4:
+				var x = parts[1].to_float()
+				var y = parts[2].to_float()
+				var z = parts[3].to_float()
+				var player_index = parts[4].to_int() if parts.size() > 4 else 0
+				claude_teleport_player_to(Vector3(x, y, z), player_index)
+			else:
+				print("Usage: teleport x y z [player_index]")
+		
+		
+		"enable_numpad_movement":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			claude_enable_player_debug_movement(true, player_index)
+		
+		"disable_numpad_movement":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			claude_enable_player_debug_movement(false, player_index)
+		
+		"simulate_input":
+			if parts.size() >= 3:
+				var action = parts[1]
+				var pressed = parts[2].to_lower() == "true" or parts[2] == "1"
+				var player_index = parts[3].to_int() if parts.size() > 3 else 0
+				_simulate_player_input(action, pressed, player_index)
+			else:
+				print("Usage: simulate_input action true/false [player_index]")
+		
+		"walk":
+			if parts.size() >= 2:
+				var direction = parts[1].to_lower()
+				var duration = parts[2].to_float() if parts.size() > 2 else 1.0
+				var player_index = parts[3].to_int() if parts.size() > 3 else 0
+				_simulate_walk(direction, duration, player_index)
+				# Check position after a short delay
+				get_tree().create_timer(0.5).timeout.connect(func():
+					var player = claude_get_all_players()[player_index] if player_index < claude_get_all_players().size() else null
+					if player and player.has_method("claude_get_position"):
+						print("Player position after walk: " + str(player.claude_get_position()))
+				)
+			else:
+				print("Usage: walk forward/back/left/right [duration] [player_index]")
+		
+		"run":
+			if parts.size() >= 2:
+				var direction = parts[1].to_lower()
+				var duration = parts[2].to_float() if parts.size() > 2 else 1.0
+				var player_index = parts[3].to_int() if parts.size() > 3 else 0
+				_simulate_run(direction, duration, player_index)
+			else:
+				print("Usage: run forward/back/left/right [duration] [player_index]")
+		
+		"jump":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			_simulate_player_input("jump", true, player_index)
+			await get_tree().create_timer(0.1).timeout
+			_simulate_player_input("jump", false, player_index)
+		
+		"status", "pos":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			var status = claude_get_player_status(player_index)
+			print("Player " + str(player_index) + " status: " + str(status))
+		
+		"list":
+			claude_list_players()
+		
+		"speed":
+			if parts.size() >= 2:
+				var speed = parts[1].to_float()
+				var player_index = parts[2].to_int() if parts.size() > 2 else 0
+				var player = claude_get_all_players()[player_index] if player_index < claude_get_all_players().size() else null
+				if player:
+					player.claude_set_move_speed(speed)
+			else:
+				print("Usage: speed value [player_index]")
+		
+		"test":
+			claude_test_movement()
+		
+		"help":
+			print("Claude Code movement commands:")
+			print("=== Emergency Position Control ===")
+			print("  teleport x y z [player] - Teleport to position")
+			print("=== Character Control (State Machine) ===")
+			print("  walk forward/back/left/right [duration] [player] - Walk with animation")
+			print("  run forward/back/left/right [duration] [player] - Run with animation")
+			print("  jump [player] - Make character jump")
+			print("  simulate_input action true/false [player] - Simulate input action")
+			print("  enable_numpad_movement [player] - Enable numpad controls")
+			print("  disable_numpad_movement [player] - Disable numpad controls")
+			print("=== Info Commands ===")
+			print("  status/pos [player] - Show player status")
+			print("  list - List all players")
+			print("  speed value [player] - Set movement speed")
+			print("  test - Run movement test")
+			print("  help - Show this help")
+		
+		_:
+			print("Unknown command: " + cmd + " (type 'help' for commands)")
+
 
 # var has_loaded_cells = false
 # func _unhandled_input(event: InputEvent) -> void:
@@ -605,3 +936,62 @@ func _recreate_remote_players():
 		# 	change_zoom(-ZOOM_STEP)
 		# if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 		# 	change_zoom(ZOOM_STEP)
+
+# Handle command line actions
+func _check_command_line_actions():
+	# Check for auto-start server from command line
+	if GameState.has_meta("auto_start_server"):
+		print("Auto-starting server from command line...")
+		call_deferred("_auto_start_server_now")
+		GameState.remove_meta("auto_start_server")
+	
+	# Check for auto-connect IP from command line
+	elif GameState.has_meta("auto_connect_ip"):
+		var ip = GameState.get_meta("auto_connect_ip")
+		print("Auto-connecting to: " + ip)
+		call_deferred("_connect_to_server", ip)
+		GameState.remove_meta("auto_connect_ip")
+	
+	# Check for local multiplayer test
+	elif GameState.has_meta("test_local_multiplayer"):
+		print("Starting local multiplayer test...")
+		call_deferred("_start_local_multiplayer_test")
+		GameState.remove_meta("test_local_multiplayer")
+	
+	# Check for debug logging
+	if GameState.has_meta("debug_multiplayer"):
+		print("Debug multiplayer logging enabled")
+		# Could add more verbose logging here
+
+func _auto_start_server_now():
+	# Actually start the server (same as pressing 'I')
+	var error = GameState.create_server()
+	if error == OK:
+		DisplayServer.window_set_title("Host")
+		# Configure existing player for multiplayer
+		_configure_local_player()
+		# Create health UI for local player
+		_create_health_ui()
+		print("Server started successfully via command line")
+	else:
+		print("Failed to start server via command line: " + error_string(error))
+
+# Start local multiplayer test (both server and client)
+func _start_local_multiplayer_test():
+	print("Creating server for local test...")
+	var error = GameState.create_server()
+	if error == OK:
+		DisplayServer.window_set_title("Host (Test Mode)")
+		_configure_local_player()
+		_create_health_ui()
+		
+		# Wait a moment then test connection to ourselves
+		await get_tree().create_timer(1.0).timeout
+		print("Testing connection to local server...")
+		var connection_test = await GameState.test_server_at_ip("127.0.0.1", 2.0)
+		print("Local server test result: " + ("✅ Success" if connection_test else "❌ Failed"))
+		
+		# Could automatically spawn a second client instance here for full testing
+		print("Local multiplayer test complete. Use 'O' on another instance to connect.")
+	else:
+		print("Failed to start local multiplayer test: " + error_string(error))
