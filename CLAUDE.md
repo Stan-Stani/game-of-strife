@@ -197,3 +197,9 @@ The project includes comprehensive unit tests for multiplayer functionality:
 - Visual pattern uses 10x10 grid mapped to 32x32 texture on 2.5x2.5 unit board
 - Shooting mechanics work correctly, only visual alignment is affected
 - **Location**: `addons/PlayerCharacter/StateMachine/player_character_script.gd` lines 684-687 (texture generation)
+
+### Pattern Synchronization
+- Pattern sync broken again after recent merge
+- Players may see incorrect patterns for other players
+- Issue likely in pattern storage/retrieval system or multiplayer state management
+- **Related**: `game_state.gd` get_player_pattern(), pattern storage functions
