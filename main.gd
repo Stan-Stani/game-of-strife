@@ -227,7 +227,7 @@ func _handle_command_line_args():
 	# Check if any automation flags are present
 	for arg in args:
 		if arg in ["--host", "--client", "--test-network", "--test-local-multiplayer", 
-				   "--auto-host", "--auto-client", "--pattern", "--skip-2d"]:
+				   "--auto-host", "--auto-client", "--pattern", "--skip-2d", "--spectate"]:
 			has_automation_flags = true
 			break
 	
@@ -307,6 +307,10 @@ func _handle_command_line_args():
 			"--enable-mouse-capture":
 				GameState.disable_mouse_capture = false
 				print("Mouse capture explicitly enabled")
+			
+			"--spectate":
+				print("Starting in spectate mode")
+				call_deferred("_auto_start_spectate")
 		
 		i += 1
 
@@ -336,6 +340,12 @@ func _test_local_multiplayer():
 	GameState.colony = grids.active
 	get_tree().change_scene_to_file("res://Game3D.tscn")
 	GameState.set_meta("test_local_multiplayer", true)
+
+func _auto_start_spectate():
+	# Start in spectate mode - no pattern needed, just go to 3D and enable spectate
+	GameState.colony = {}  # Empty pattern for spectate mode
+	get_tree().change_scene_to_file("res://Game3D.tscn")
+	GameState.set_meta("spectate_mode", true)
 
 func _skip_to_3d():
 	# Skip directly to 3D mode with empty colony

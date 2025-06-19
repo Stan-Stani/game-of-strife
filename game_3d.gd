@@ -50,7 +50,16 @@ var mouse_capture_button: Button = null
 
 # Placeholder menu
 var placeholder_menu: Control = null
+
+# Spectate mode
+var spectate_mode: bool = false
+var spectate_camera: Camera3D = null
+var spectate_speed: float = 10.0
 func _process(_delta: float) -> void:
+	# Handle spectate mode movement
+	if spectate_mode and spectate_camera:
+		_handle_spectate_movement(_delta)
+	
 	# Update mouse capture button visibility
 	_update_mouse_capture_button()
 	
@@ -74,6 +83,12 @@ func _process(_delta: float) -> void:
 	# Handle pattern selection mode inputs (but don't return early)
 	if pattern_selection_overlay != null:
 		if Input.is_action_just_pressed("ragdoll"):  # 'R' key
+			# Mark player as entering actual pattern editing
+			var local_player = get_local_player()
+			if local_player:
+				local_player.set_meta("in_death_menu", false)
+				local_player.set_meta("in_pattern_selection", true)
+			
 			# Transition to 2D pattern editor
 			GameState.colony = GameState.get_player_pattern(multiplayer.get_unique_id())
 			get_tree().change_scene_to_file("res://Main.tscn")
@@ -81,6 +96,9 @@ func _process(_delta: float) -> void:
 			# Respawn immediately with current pattern (no changes needed)
 			var local_player = get_local_player()
 			if local_player and local_player.has_method("_request_respawn"):
+				# Clear death menu flag since we're respawning
+				local_player.set_meta("in_death_menu", false)
+				local_player.set_meta("in_pattern_selection", false)
 				local_player._request_respawn.rpc(true)
 				_hide_pattern_selection_overlay()
 	
@@ -100,6 +118,14 @@ func _process(_delta: float) -> void:
 		
 	if Input.is_action_just_pressed("be_client"):
 		_show_server_selection_ui()
+	
+	# Toggle spectate mode with 'T' key
+	if Input.is_physical_key_pressed(KEY_T):
+		if not get_meta("t_key_pressed", false):
+			set_meta("t_key_pressed", true)
+			_toggle_spectate_mode()
+	else:
+		set_meta("t_key_pressed", false)
 	
 	# Handle escape key
 	if Input.is_action_just_pressed("ui_cancel"):
@@ -594,16 +620,29 @@ func _restore_multiplayer_state():
 	# Configure local player
 	_configure_local_player()
 	
-	# Check if the player should still be in pattern selection mode
+	# Check the player's state when returning from pattern editing
 	var local_player = get_local_player()
+	var was_in_death_menu = false
 	var was_in_pattern_selection = false
-	if local_player and local_player.has_meta("in_pattern_selection"):
-		was_in_pattern_selection = local_player.get_meta("in_pattern_selection")
+	
+	if local_player:
+		if local_player.has_meta("in_death_menu"):
+			was_in_death_menu = local_player.get_meta("in_death_menu")
+		if local_player.has_meta("in_pattern_selection"):
+			was_in_pattern_selection = local_player.get_meta("in_pattern_selection")
 	
 	# GameState handles pattern storage
 	
-	# If player was in pattern selection, keep them invisible and show overlay
+	# Handle different return states
 	if was_in_pattern_selection and local_player:
+		# Player is returning from actual pattern editing - auto-respawn with new pattern
+		print("Player returned from pattern editing - auto-respawning...")
+		local_player.set_meta("in_death_menu", false)
+		local_player.set_meta("in_pattern_selection", false)
+		if local_player.has_method("_exit_pattern_selection"):
+			local_player._exit_pattern_selection()
+	elif was_in_death_menu and local_player:
+		# Player was in death menu - restore death menu state
 		local_player.visible = false
 		local_player.set_physics_process(false)
 		local_player.set_process(false)
@@ -1253,6 +1292,12 @@ func _check_command_line_actions():
 		call_deferred("_start_local_multiplayer_test")
 		GameState.remove_meta("test_local_multiplayer")
 	
+	# Check for spectate mode
+	if GameState.has_meta("spectate_mode"):
+		print("Starting in spectate mode...")
+		call_deferred("_enable_spectate_mode")
+		GameState.remove_meta("spectate_mode")
+	
 	# Check for debug logging
 	if GameState.has_meta("debug_multiplayer"):
 		print("Debug multiplayer logging enabled")
@@ -1388,6 +1433,13 @@ func _show_placeholder_menu():
 	resume_unlocked_btn.pressed.connect(_resume_game_with_mouse_unlocked)
 	vbox.add_child(resume_unlocked_btn)
 	
+	# Spectate mode toggle
+	var spectate_btn = Button.new()
+	spectate_btn.text = "Toggle Spectate Mode (T)"
+	spectate_btn.custom_minimum_size = Vector2(200, 40)
+	spectate_btn.pressed.connect(_toggle_spectate_from_menu)
+	vbox.add_child(spectate_btn)
+	
 	# Settings button (placeholder)
 	var settings_btn = Button.new()
 	settings_btn.text = "Settings (Coming Soon)"
@@ -1418,6 +1470,120 @@ func _resume_game_with_mouse_unlocked():
 	_hide_placeholder_menu()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+func _toggle_spectate_from_menu():
+	_hide_placeholder_menu()
+	_toggle_spectate_mode()
+
 func _on_exit_game_pressed():
 	get_tree().quit()
+
+# Spectate mode functions
+func _toggle_spectate_mode():
+	if spectate_mode:
+		_disable_spectate_mode()
+	else:
+		_enable_spectate_mode()
+
+func _enable_spectate_mode():
+	if spectate_mode:
+		return
+	
+	print("Spectate mode enabled - Press T to toggle, WASD to fly, mouse to look")
+	spectate_mode = true
+	
+	# Create spectate camera
+	spectate_camera = Camera3D.new()
+	spectate_camera.name = "SpectateCamera"
+	add_child(spectate_camera)
+	
+	# Position camera at a good starting point
+	spectate_camera.global_position = Vector3(0, 5, 10)
+	spectate_camera.look_at(Vector3.ZERO, Vector3.UP)
+	
+	# Make it the current camera
+	spectate_camera.current = true
+	
+	# Disable the player if we have one
+	var player = get_local_player()
+	if player:
+		player.visible = false
+		# Disable player processing and input
+		player.process_mode = Node.PROCESS_MODE_DISABLED
+	
+	# Ensure mouse is captured for camera control
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _disable_spectate_mode():
+	if not spectate_mode:
+		return
+	
+	print("Spectate mode disabled")
+	spectate_mode = false
+	
+	# Remove spectate camera
+	if spectate_camera:
+		spectate_camera.queue_free()
+		spectate_camera = null
+	
+	# Re-enable and show the player again
+	var player = get_local_player()
+	if player:
+		player.visible = true
+		# Re-enable player processing and input
+		player.process_mode = Node.PROCESS_MODE_INHERIT
+		# Restore player's camera
+		var player_camera = player.get_node_or_null("OrbitView/CameraContainer/Camera3D")
+		if player_camera:
+			player_camera.current = true
+
+var spectate_mouse_sensitivity = 0.002
+
+func _handle_spectate_movement(delta: float):
+	if not spectate_camera:
+		return
+	
+	# Handle mouse look
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		# This will be handled in _unhandled_input for mouse events
+		pass
+	
+	# Handle WASD movement
+	var movement = Vector3.ZERO
+	var transform = spectate_camera.global_transform
+	
+	if Input.is_action_pressed("move_forward"):
+		movement -= transform.basis.z  # Forward is -Z
+	if Input.is_action_pressed("move_backward"):
+		movement += transform.basis.z  # Backward is +Z
+	if Input.is_action_pressed("move_left"):
+		movement -= transform.basis.x  # Left is -X
+	if Input.is_action_pressed("move_right"):
+		movement += transform.basis.x  # Right is +X
+	
+	# Vertical movement
+	if Input.is_action_pressed("jump"):  # Space
+		movement += transform.basis.y  # Up is +Y
+	if Input.is_action_pressed("run"):  # Shift for down movement
+		movement -= transform.basis.y  # Down is -Y
+	
+	# Apply movement
+	if movement.length() > 0:
+		movement = movement.normalized() * spectate_speed * delta
+		spectate_camera.global_position += movement
+
+func _unhandled_input(event: InputEvent):
+	if spectate_mode and spectate_camera and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if event is InputEventMouseMotion:
+			# Rotate camera based on mouse movement
+			var mouse_delta = event.relative * spectate_mouse_sensitivity
+			
+			# Horizontal rotation (Y-axis)
+			spectate_camera.rotate_y(-mouse_delta.x)
+			
+			# Vertical rotation (local X-axis)
+			var current_rotation = spectate_camera.rotation.x
+			var new_rotation = current_rotation - mouse_delta.y
+			# Clamp vertical rotation to prevent flipping
+			new_rotation = clamp(new_rotation, -PI/2 + 0.1, PI/2 - 0.1)
+			spectate_camera.rotation.x = new_rotation
 
