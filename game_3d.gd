@@ -47,6 +47,9 @@ var health_ui_instance = null
 
 # Mouse capture toggle button
 var mouse_capture_button: Button = null
+
+# Placeholder menu
+var placeholder_menu: Control = null
 func _process(_delta: float) -> void:
 	# Update mouse capture button visibility
 	_update_mouse_capture_button()
@@ -98,9 +101,18 @@ func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("be_client"):
 		_show_server_selection_ui()
 	
-	# Handle mouse capture toggle
-	if Input.is_action_just_pressed("toggle_mouse_capture"):
-		_toggle_mouse_capture()
+	# Handle escape key
+	if Input.is_action_just_pressed("ui_cancel"):
+		if placeholder_menu != null and placeholder_menu.visible:
+			# Close placeholder menu
+			_hide_placeholder_menu()
+		else:
+			# Open placeholder menu and uncapture mouse (if no other UI is open)
+			if server_ui_instance == null and pattern_selection_overlay == null:
+				# Uncapture mouse if captured
+				if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				_show_placeholder_menu()
 
 var remote_player_dictionary: Dictionary = {}
 
@@ -1312,7 +1324,8 @@ func _update_mouse_capture_button():
 	# Show button only when mouse is not captured and no UI is open
 	var should_show = (Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and 
 					   server_ui_instance == null and 
-					   pattern_selection_overlay == null)
+					   pattern_selection_overlay == null and
+					   (placeholder_menu == null or not placeholder_menu.visible))
 	
 	mouse_capture_button.visible = should_show
 
@@ -1320,12 +1333,91 @@ func _on_mouse_capture_button_pressed():
 	# Capture the mouse when button is clicked
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func _toggle_mouse_capture():
-	# Don't toggle if UI is open
-	if server_ui_instance != null or pattern_selection_overlay != null:
+# Placeholder menu management
+func _show_placeholder_menu():
+	if placeholder_menu != null:
 		return
 	
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	else:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Create menu background
+	placeholder_menu = Control.new()
+	placeholder_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(placeholder_menu)
+	
+	# Semi-transparent background
+	var background = ColorRect.new()
+	background.color = Color(0, 0, 0, 0.7)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	placeholder_menu.add_child(background)
+	
+	# Menu panel
+	var panel = Panel.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.size = Vector2(400, 300)
+	panel.position = Vector2(-200, -150)  # Center it
+	placeholder_menu.add_child(panel)
+	
+	# Menu content
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 20)
+	panel.add_child(vbox)
+	
+	# Title
+	var title = Label.new()
+	title.text = "Game Menu"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	vbox.add_child(title)
+	
+	# Spacer
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 20)
+	vbox.add_child(spacer)
+	
+	# Resume button (with mouse captured)
+	var resume_btn = Button.new()
+	resume_btn.text = "Resume Game"
+	resume_btn.custom_minimum_size = Vector2(200, 40)
+	resume_btn.pressed.connect(_resume_game_with_mouse_captured)
+	vbox.add_child(resume_btn)
+	
+	# Resume with mouse unlocked button
+	var resume_unlocked_btn = Button.new()
+	resume_unlocked_btn.text = "Resume with Mouse Unlocked"
+	resume_unlocked_btn.custom_minimum_size = Vector2(200, 40)
+	resume_unlocked_btn.pressed.connect(_resume_game_with_mouse_unlocked)
+	vbox.add_child(resume_unlocked_btn)
+	
+	# Settings button (placeholder)
+	var settings_btn = Button.new()
+	settings_btn.text = "Settings (Coming Soon)"
+	settings_btn.custom_minimum_size = Vector2(200, 40)
+	settings_btn.disabled = true
+	vbox.add_child(settings_btn)
+	
+	# Exit button
+	var exit_btn = Button.new()
+	exit_btn.text = "Exit Game"
+	exit_btn.custom_minimum_size = Vector2(200, 40)
+	exit_btn.pressed.connect(_on_exit_game_pressed)
+	vbox.add_child(exit_btn)
+	
+	# Make sure mouse is visible for menu interaction
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _hide_placeholder_menu():
+	if placeholder_menu != null:
+		placeholder_menu.queue_free()
+		placeholder_menu = null
+
+func _resume_game_with_mouse_captured():
+	_hide_placeholder_menu()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _resume_game_with_mouse_unlocked():
+	_hide_placeholder_menu()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _on_exit_game_pressed():
+	get_tree().quit()
+
