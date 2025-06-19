@@ -141,6 +141,11 @@ This is especially important after running multiple test sessions to prevent res
 - **Always use `disown` when starting child processes**
   - Prevents zombie processes
   - Allows long-running background tasks to continue after terminal closes
+- **Alternative to disown for Godot processes**:
+  - `(/mnt/c/ProgramData/chocolatey/bin/godot.exe --auto-host > host_output.log 2>&1 &) && exit 0`
+    - Redirects output to log file
+    - Runs in background
+    - Exits current shell immediately
 
 ### Unit Testing
 
@@ -183,5 +188,3 @@ The project includes comprehensive unit tests for multiplayer functionality:
 - Command file system in multiplayer environment
 - Pattern synchronization between players
 - Server-client architecture handles connections reliably
-
-[... rest of the existing file content remains the same ...]

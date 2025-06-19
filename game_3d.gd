@@ -781,14 +781,18 @@ func claude_aim_at_player(target_player_index: int, aiming_player_index: int = 0
 	var direction = (target_pos - aiming_pos).normalized()
 	
 	# Calculate angles for aiming
-	# In Godot, Y rotation of 0 points forward (-Z), so we need to adjust
-	var horizontal_angle = atan2(direction.x, -direction.z)  # Negative Z for forward direction
+	# In Godot, Y rotation of 0 points forward (-Z), so we calculate angle to look toward target
+	# Add PI to flip the direction so we actually face the target
+	var horizontal_angle = atan2(direction.x, direction.z) + PI
 	var distance_2d = Vector2(direction.x, direction.z).length()
 	var vertical_angle = atan2(direction.y, distance_2d)
 	
 	# Get camera system
 	var camera_system = aiming_player.get_node("OrbitView")
 	if camera_system:
+		# Store current rotation for debugging
+		var old_rotation = camera_system.rotation
+		
 		# Rotate camera to look at target
 		camera_system.rotation.y = horizontal_angle
 		camera_system.rotation.x = -vertical_angle  # Negative because camera X rotation is inverted
@@ -796,6 +800,7 @@ func claude_aim_at_player(target_player_index: int, aiming_player_index: int = 0
 		print("Aiming player " + str(aiming_player_index) + " at player " + str(target_player_index))
 		print("Target position: " + str(target_pos))
 		print("Aiming angles: horizontal=" + str(rad_to_deg(horizontal_angle)) + "°, vertical=" + str(rad_to_deg(vertical_angle)) + "°")
+		print("Camera rotation changed from " + str(old_rotation) + " to " + str(camera_system.rotation))
 		return true
 	else:
 		print("Camera system not found for player " + str(aiming_player_index))
@@ -863,6 +868,37 @@ func claude_get_nearest_enemy_player(player_index: int = 0) -> int:
 		print("No enemy players found for player " + str(player_index))
 	
 	return nearest_index
+
+func claude_get_camera_direction(player_index: int = 0):
+	"""Get the current camera direction and rotation for a player"""
+	var players = claude_get_all_players()
+	
+	if player_index >= players.size():
+		print("Player index " + str(player_index) + " not found")
+		return
+	
+	var player = players[player_index]
+	var camera_system = player.get_node("OrbitView")
+	
+	if camera_system:
+		var rotation = camera_system.rotation
+		var camera = camera_system.get_node("Camera3D")
+		
+		if camera:
+			var forward = -camera.global_transform.basis.z  # Forward direction in world space
+			var right = camera.global_transform.basis.x     # Right direction
+			var up = camera.global_transform.basis.y        # Up direction
+			
+			print("Player " + str(player_index) + " camera info:")
+			print("  Position: " + str(player.position))
+			print("  Camera rotation: " + str(rotation) + " (degrees: " + str(Vector3(rad_to_deg(rotation.x), rad_to_deg(rotation.y), rad_to_deg(rotation.z))) + ")")
+			print("  Forward direction: " + str(forward))
+			print("  Right direction: " + str(right))
+			print("  Up direction: " + str(up))
+		else:
+			print("Camera3D not found for player " + str(player_index))
+	else:
+		print("Camera system not found for player " + str(player_index))
 
 # === INPUT SIMULATION FUNCTIONS ===
 
@@ -1131,6 +1167,10 @@ func _execute_claude_command(command: String, source_file: String = ""):
 				claude_shoot_at_player(nearest, shooting_player)
 			else:
 				print("No enemies found to shoot at for player " + str(shooting_player))
+		
+		"look_dir", "camera_dir", "rotation":
+			var player_index = parts[1].to_int() if parts.size() > 1 else 0
+			claude_get_camera_direction(player_index)
 		
 		"help":
 			print("Claude Code movement commands:")
