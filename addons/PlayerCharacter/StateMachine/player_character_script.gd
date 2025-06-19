@@ -1020,8 +1020,9 @@ func _transition_to_pattern_selection():
 	# Save current GameState.colony before transitioning (in case player wants to keep current pattern)
 	GameState.colony = Game3D.get_player_pattern(player_peer_id)
 	
-	# Mark player as in pattern selection mode IMMEDIATELY (locally first, then sync)
-	set_meta("in_pattern_selection", true)
+	# Mark player as in death menu mode (not actual pattern selection yet)
+	set_meta("in_death_menu", true)
+	set_meta("in_pattern_selection", false)
 	
 	# Note: No need to sync pattern selection state anymore since respawn timer is properly managed
 	
@@ -1045,9 +1046,9 @@ func _handle_respawn():
 		return
 	
 	
-	# Check if this is a local player in pattern selection - should not respawn
-	if not is_remote and has_meta("in_pattern_selection") and get_meta("in_pattern_selection"):
-		print("ERROR: Attempted to respawn local player in pattern selection mode!")
+	# Check if this is a local player in death menu or pattern selection - should not respawn
+	if not is_remote and ((has_meta("in_death_menu") and get_meta("in_death_menu")) or (has_meta("in_pattern_selection") and get_meta("in_pattern_selection"))):
+		print("ERROR: Attempted to respawn local player in death menu or pattern selection mode!")
 		return
 	
 	# Reset health
@@ -1109,7 +1110,9 @@ func _exit_pattern_selection():
 	if not is_dead:
 		return
 	
-	# Mark as no longer in pattern selection
+	# Clear both death menu and pattern selection flags
+	set_meta("in_death_menu", false)
+	set_meta("in_pattern_selection", false)
 	_set_pattern_selection_mode.rpc(false)
 	
 	# Request immediate respawn

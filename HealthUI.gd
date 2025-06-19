@@ -108,10 +108,17 @@ func _update_health_display(current_health: float, max_health: float):
 func _process(_delta):
 	# Update respawn timer and pattern selection status
 	if player_character and player_character.is_dead:
-		# Check if player is in pattern selection mode
-		if player_character.has_meta("in_pattern_selection") and player_character.get_meta("in_pattern_selection"):
+		# Check if player is in death menu or pattern selection mode
+		var in_death_menu = player_character.has_meta("in_death_menu") and player_character.get_meta("in_death_menu")
+		var in_pattern_selection = player_character.has_meta("in_pattern_selection") and player_character.get_meta("in_pattern_selection")
+		
+		if in_pattern_selection:
 			if respawn_label:
 				respawn_label.text = "In Pattern Selection"
+				respawn_label.visible = true
+		elif in_death_menu:
+			if respawn_label:
+				respawn_label.text = "Choose Respawn Option"
 				respawn_label.visible = true
 		elif respawn_label and player_character.respawn_timer > 0:
 			respawn_label.text = "Respawning in: " + str(int(player_character.respawn_timer + 1))
