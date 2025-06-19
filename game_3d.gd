@@ -37,10 +37,19 @@ func _ready():
 	# Start listening for Claude Code movement commands
 	_start_claude_command_listener()
 	
+	# Create mouse capture toggle button
+	_create_mouse_capture_button()
+	
 	
 var HealthUI = preload("res://HealthUI.tscn")
 var health_ui_instance = null
+
+# Mouse capture toggle button
+var mouse_capture_button: Button = null
 func _process(_delta: float) -> void:
+	# Update mouse capture button visibility
+	_update_mouse_capture_button()
+	
 	# Check claude commands
 	_check_claude_commands()
 	
@@ -87,6 +96,10 @@ func _process(_delta: float) -> void:
 		
 	if Input.is_action_just_pressed("be_client"):
 		_show_server_selection_ui()
+	
+	# Handle mouse capture toggle
+	if Input.is_action_just_pressed("toggle_mouse_capture"):
+		_toggle_mouse_capture()
 
 var remote_player_dictionary: Dictionary = {}
 
@@ -1224,3 +1237,54 @@ func _start_local_multiplayer_test():
 		print("Local multiplayer test complete. Use 'O' on another instance to connect.")
 	else:
 		print("Failed to start local multiplayer test: " + error_string(error))
+
+# Mouse capture button management
+func _create_mouse_capture_button():
+	if mouse_capture_button != null:
+		return
+	
+	# Create button
+	mouse_capture_button = Button.new()
+	mouse_capture_button.text = "Click to Capture Mouse"
+	mouse_capture_button.size = Vector2(200, 40)
+	
+	# Position in bottom right
+	mouse_capture_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	mouse_capture_button.position = Vector2(-220, -60)  # Offset from bottom right
+	
+	# Style the button
+	mouse_capture_button.add_theme_font_size_override("font_size", 14)
+	
+	# Connect button signal
+	mouse_capture_button.pressed.connect(_on_mouse_capture_button_pressed)
+	
+	# Add to scene
+	add_child(mouse_capture_button)
+	
+	# Initially hidden - will be shown by _update_mouse_capture_button()
+	mouse_capture_button.visible = false
+
+func _update_mouse_capture_button():
+	if mouse_capture_button == null:
+		return
+	
+	# Show button only when mouse is not captured and no UI is open
+	var should_show = (Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and 
+					   server_ui_instance == null and 
+					   pattern_selection_overlay == null)
+	
+	mouse_capture_button.visible = should_show
+
+func _on_mouse_capture_button_pressed():
+	# Capture the mouse when button is clicked
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _toggle_mouse_capture():
+	# Don't toggle if UI is open
+	if server_ui_instance != null or pattern_selection_overlay != null:
+		return
+	
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
