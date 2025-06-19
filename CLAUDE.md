@@ -188,3 +188,12 @@ The project includes comprehensive unit tests for multiplayer functionality:
 - Command file system in multiplayer environment
 - Pattern synchronization between players
 - Server-client architecture handles connections reliably
+
+## Known Issues
+
+### Pattern Alignment
+- Player pattern visual boards have slight misalignment with Conway's Game of Life coordinates
+- Corner cells don't appear exactly at board corners due to asymmetric coordinate mapping (-5 to +4 range)
+- Visual pattern uses 10x10 grid mapped to 32x32 texture on 2.5x2.5 unit board
+- Shooting mechanics work correctly, only visual alignment is affected
+- **Location**: `addons/PlayerCharacter/StateMachine/player_character_script.gd` lines 684-687 (texture generation)

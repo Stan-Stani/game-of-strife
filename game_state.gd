@@ -66,6 +66,9 @@ func create_server() -> int:
 		set_multiplayer_peer(multiplayer_peer, true)
 		print("Server created on port " + str(PORT))
 		_connect_multiplayer_signals()
+		
+		# Store host's pattern so clients can access it
+		_store_local_player_pattern()
 	else:
 		print("Failed to create server: " + error_string(error))
 	
@@ -170,8 +173,10 @@ func get_player_pattern(peer_id: int) -> Dictionary:
 	if player_patterns.has(peer_id):
 		return player_patterns[peer_id]
 	else:
-		# Fallback to current colony if no stored pattern
-		return colony
+		# Return empty pattern if no stored pattern for this peer
+		# Don't fallback to local colony as that causes wrong patterns to be displayed
+		print("Warning: No pattern found for peer " + str(peer_id) + ", returning empty pattern")
+		return {}
 
 # RPC functions
 @rpc("any_peer", "call_remote")
