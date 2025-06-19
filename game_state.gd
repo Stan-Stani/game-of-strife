@@ -10,6 +10,9 @@ var multiplayer_peer: ENetMultiplayerPeer = null
 var is_host: bool = false
 var is_connected: bool = false
 
+# Testing flags
+var disable_mouse_capture: bool = false
+
 # Player management
 var remote_player_dictionary: Dictionary = {}
 var player_patterns: Dictionary = {}

@@ -90,6 +90,18 @@ func _process(_delta: float) -> void:
 
 var remote_player_dictionary: Dictionary = {}
 
+# Spawn point management
+var spawn_radius: float = 10.0  # Distance from center for spawn points
+var next_spawn_index: int = 0   # Track which spawn point to use next
+
+func get_spawn_position(player_index: int) -> Vector3:
+	# Distribute players in a circle around the origin
+	# This ensures players don't spawn on top of each other
+	var angle = (player_index * TAU) / 8.0  # Support up to 8 players evenly distributed
+	var x = sin(angle) * spawn_radius
+	var z = cos(angle) * spawn_radius
+	return Vector3(x, 0, z)
+
 # UI Management
 var ServerSelectionUI = preload("res://ServerSelectionUI.tscn")
 var server_ui_instance = null
@@ -104,6 +116,10 @@ func _add_remote_player_character(new_peer_id: int):
 	# Simple collision system: all players on same layer, can collide with each other
 	new_player_character.collision_layer = 4  # All players on layer 4
 	new_player_character.collision_mask = 7   # Collide with environment (1), floor (2), and other players (4)
+	
+	# Set spawn position for remote player
+	next_spawn_index += 1
+	new_player_character.position = get_spawn_position(next_spawn_index)
 	
 	add_child(new_player_character)
 	remote_player_dictionary[new_peer_id] = new_player_character
@@ -143,6 +159,16 @@ func _configure_local_player():
 		local_player.name = "LocalPlayer_" + str(multiplayer.get_unique_id())
 		local_player.set_multiplayer_authority(multiplayer.get_unique_id())
 		local_player_ref = local_player  # Store reference for later use
+		
+		# Set spawn position for local player
+		# Host gets position 0, clients get subsequent positions
+		if multiplayer.is_server():
+			local_player.position = get_spawn_position(0)
+		else:
+			# For clients, use their unique ID to determine spawn position
+			# This gives a somewhat deterministic but distributed spawn
+			var spawn_slot = multiplayer.get_unique_id() % 8
+			local_player.position = get_spawn_position(spawn_slot)
 		
 		# Simple collision system: all players on same layer, can collide with each other
 		local_player.collision_layer = 4  # All players on layer 4

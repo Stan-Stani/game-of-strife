@@ -222,6 +222,19 @@ func _handle_command_line_args():
 	var args = OS.get_cmdline_args()
 	print("Command line args: " + str(args))
 	var i = 0
+	var has_automation_flags = false
+	
+	# Check if any automation flags are present
+	for arg in args:
+		if arg in ["--host", "--client", "--test-network", "--test-local-multiplayer", 
+				   "--auto-host", "--auto-client", "--pattern", "--skip-2d"]:
+			has_automation_flags = true
+			break
+	
+	# Disable mouse capture by default for automated testing unless explicitly enabled
+	if has_automation_flags and not "--enable-mouse-capture" in args:
+		GameState.disable_mouse_capture = true
+		print("Mouse capture disabled for automated testing (use --enable-mouse-capture to override)")
 	
 	while i < args.size():
 		var arg = args[i]
@@ -290,6 +303,10 @@ func _handle_command_line_args():
 				else:
 					print("Auto-connecting as client to localhost")
 					call_deferred("_auto_client_with_pattern", "127.0.0.1")
+			
+			"--enable-mouse-capture":
+				GameState.disable_mouse_capture = false
+				print("Mouse capture explicitly enabled")
 		
 		i += 1
 

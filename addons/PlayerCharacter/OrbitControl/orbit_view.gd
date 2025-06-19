@@ -31,7 +31,8 @@ var aim_cam_pos_side : bool = true #false = left, true = right
 
 func _ready():
 	#capture mouse cursor, and enable camera
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not GameState.disable_mouse_capture:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	Input.set_use_accumulated_input(false)
 	set_active(active)
 	
