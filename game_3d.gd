@@ -8,12 +8,13 @@ func _ready():
 	# Store the pattern immediately when scene loads (before multiplayer overwrites it)
 	GameState.store_pattern_on_load()
 	
-	for cellPos in GameState.colony:
-				if GameState.colony[cellPos] == true:
-					var cell_3d = Cell3D.instantiate()
-					var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
-					cell_3d.position = position_3d
-					add_child(cell_3d)
+	# Skip spawning world decoration blocks to avoid visual clutter
+	# for cellPos in GameState.colony:
+	#			if GameState.colony[cellPos] == true:
+	#				var cell_3d = Cell3D.instantiate()
+	#				var position_3d = Vector3(cellPos.x, -cellPos.y, 0)
+	#				cell_3d.position = position_3d
+	#				add_child(cell_3d)
 	
 	# Connect to GameState signals
 	GameState.peer_connected.connect(_on_peer_connected)
