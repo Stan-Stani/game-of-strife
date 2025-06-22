@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/mnt/c/ProgramData/chocolatey/bin/godot.exe)"
+    ],
+    "deny": []
+  }
+}
