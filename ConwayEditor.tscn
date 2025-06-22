@@ -1,11 +1,11 @@
 [gd_scene load_steps=4 format=3 uid="uid://cwrf10pi1rxfh"]
 
-[ext_resource type="Script" uid="uid://k8m1reig26fw" path="res://main.gd" id="1_glv2v"]
+[ext_resource type="Script" uid="uid://b7mf0t2igpcx8" path="res://conway_editor.gd" id="1_si6ba"]
 [ext_resource type="PackedScene" uid="uid://rlowg40gvihs" path="res://cell.tscn" id="2_uu6xs"]
 [ext_resource type="Script" uid="uid://dklpcr2eu6bo" path="res://cell.gd" id="3_r0du0"]
 
 [node name="2D Editor" type="Node2D"]
-script = ExtResource("1_glv2v")
+script = ExtResource("1_si6ba")
 
 [node name="Cell" parent="." instance=ExtResource("2_uu6xs")]
 visible = false
